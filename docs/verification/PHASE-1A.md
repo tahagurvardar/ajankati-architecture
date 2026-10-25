@@ -41,6 +41,8 @@ Bağımsız incelemede kritik bulgu kalmadı. Bulunan stale lock durumu bilinen 
 
 Bu yerel ortamda Windows 11, ConPTY/node-pty, gerçek Claude/Codex protokolü, named pipe DACL, Job Object, dosya/ağ sandbox'ı, uyku/güç kesintisi, paketlenmiş installer/imzalama ve 8 GB performans hedefleri test edilmedi. Arka plan/bağımsız yeniden bağlanma, DAG, durable outbox, gerçek araç onayları, model routing, API anahtar kasası ve MCP/skill/plugin etkinleştirme henüz uygulanmadı. SQLite dosyası sır kasası değildir; yeni migration öncesi backup/restore kapısı henüz yoktur.
 
+İlk GitHub Linux koşusunda temel kontroller geçti; Electron adımı SUID sandbox helper'ının root sahibi/4755 modunda olmaması nedeniyle durdu. Workflow, Electron'un desteklenen helper kurulumunu yapacak şekilde düzeltildi; sandbox kapatılmadı ve namespace güvenlik politikası gevşetilmedi.
+
 GitHub workflow Linux ve Windows üzerinde temel kontroller ile Electron smoke testini tanımlar. Gerçek run sonuçları PR'ın Checks bölümünden doğrulanmalıdır; workflow dosyasının bulunması tek başına başarılı test anlamına gelmez. Windows CI geçerse dahi ConPTY/CLI/native güvenlik kapıları geçmiş sayılmaz.
 
 Bir sonraki en küçük kilometre taşı: [Windows ConPTY prosedürünün](WINDOWS-CLI.md) yalnız test executable'ı ile terminal açma, Türkçe giriş, resize, Ctrl+C ve exit dilimi. Gerçek CLI otomasyonundan önce native güvenlik kanıtları ayrıca gereklidir.
