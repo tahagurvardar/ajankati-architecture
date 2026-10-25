@@ -1,0 +1,12 @@
+{
+  "name": "@ajankati/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ajankati/contracts": "workspace:*",
+    "@ajankati/domain": "workspace:*",
+    "@ajankati/storage": "workspace:*",
+    "@ajankati/adapters": "workspace:*"
+  }
+}
