@@ -12,6 +12,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,7 +22,7 @@ jobs:
           version: 11.25.0
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: "24"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
@@ -38,4 +39,5 @@ jobs:
         run: xvfb-run -a pnpm test:desktop
       - name: Electron integration smoke (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 2
         run: pnpm test:desktop

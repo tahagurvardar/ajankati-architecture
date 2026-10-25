@@ -17,7 +17,7 @@
     "test:integration": "pnpm build && vitest run tests/worker.test.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "demo": "tsx scripts/demo.ts",
-    "test:desktop": "electron tests/fixtures/desktop-smoke.cjs",
+    "test:desktop": "tsx scripts/desktop-smoke.ts",
     "format:check": "prettier --check apps packages scripts tests package.json tsconfig.json eslint.config.js pnpm-workspace.yaml"
   },
   "dependencies": {

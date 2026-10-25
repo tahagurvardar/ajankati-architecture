@@ -61,7 +61,7 @@ pnpm test:desktop
 pnpm audit --prod
 ```
 
-`pnpm verify` ilk dört kontrolü sırayla çalıştırır; `pnpm test` için önce build gereklidir (gerçek child IPC testi derlenmiş worker kullanır). `pnpm test:desktop` gerçek Electron ana süreç/preload/renderer/worker/SQLite hattını geçici DB ile sınar. Linux ekransız ortamda `pnpm exec electron --ozone-platform=headless tests/fixtures/desktop-smoke.cjs` veya Xvfb kullanılabilir. Sandbox kapatma bayrağı eklenmez. React DOM testi gerçek servis ve SQLite'a bağlıdır; sahte bir UI API başarısı üzerine kurulmamıştır.
+`pnpm verify` ilk dört kontrolü sırayla çalıştırır; `pnpm test` için önce build gereklidir (gerçek child IPC testi derlenmiş worker kullanır). `pnpm test:desktop` gerçek Electron ana süreç/preload/renderer/worker/SQLite hattını geçici DB ile sınar. Linux ekransız ortamda `pnpm test:desktop --ozone-platform=headless` veya Xvfb kullanılabilir. Sandbox kapatma bayrağı eklenmez. React DOM testi gerçek servis ve SQLite'a bağlıdır; sahte bir UI API başarısı üzerine kurulmamıştır.
 
 GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. Bu, ConPTY, gerçek CLI, Windows DACL, Job Object veya sandbox yeteneklerinin kanıtı değildir. Çalıştırılmış komutlar ve sınırlamalar [Faz 1A doğrulama kaydında](docs/verification/PHASE-1A.md), sonraki Windows prosedürü [WINDOWS-CLI.md](docs/verification/WINDOWS-CLI.md) içinde bulunur. Tarihsel `docs/01–12` değiştirilmedi.
 

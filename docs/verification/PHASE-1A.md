@@ -19,7 +19,7 @@ Linux x64; Node v24.19.0, pnpm 11.25.0. Electron v45.0.0'ın gömülü Node sür
 | `pnpm audit` | Son koşuda bilinen güvenlik açığı bulunmadı |
 | `pnpm audit --prod` | Bilinen güvenlik açığı bulunmadı |
 | `pnpm exec electron --version` | v45.0.0 |
-| `pnpm exec electron --ozone-platform=headless --disable-gpu tests/fixtures/desktop-smoke.cjs` | Başarılı; gerçek production giriş/preload/React/main/Node worker/SQLite hattı, mock sonuç ve kabul komutu |
+| `pnpm test:desktop --ozone-platform=headless --disable-gpu` | Başarılı; gerçek production giriş/preload/React/main/Node worker/SQLite hattı, mock sonuç ve kabul komutu |
 | `git diff --exit-code 410a859f882180df612736e377df1a97778693ad -- 'docs/0*.md' 'docs/1*.md'` | Başarılı; 12 mimari belgesinde değişiklik yok |
 
 Electron smoke testi `sandbox`, `contextIsolation` ve kapalı `nodeIntegration` tercihlerini; renderer'da `require` bulunmamasını denetler. Testte sandbox kapatma bayrağı kullanılmaz. Linux ekransız ortamda DBus hizmeti bulunmadığına dair stderr uyarıları görüldü; smoke akışı çıkış kodu 0 ile tamamlandı. GPU kapatma yalnız bu ekransız test komutunda; ürün varsayılanı değildir. Normal pencereli Windows kullanımının veya GPU performansının kanıtı değildir.
@@ -42,6 +42,8 @@ Bağımsız incelemede kritik bulgu kalmadı. Bulunan stale lock durumu bilinen 
 Bu yerel ortamda Windows 11, ConPTY/node-pty, gerçek Claude/Codex protokolü, named pipe DACL, Job Object, dosya/ağ sandbox'ı, uyku/güç kesintisi, paketlenmiş installer/imzalama ve 8 GB performans hedefleri test edilmedi. Arka plan/bağımsız yeniden bağlanma, DAG, durable outbox, gerçek araç onayları, model routing, API anahtar kasası ve MCP/skill/plugin etkinleştirme henüz uygulanmadı. SQLite dosyası sır kasası değildir; yeni migration öncesi backup/restore kapısı henüz yoktur.
 
 İlk GitHub Linux koşusunda temel kontroller geçti; Electron adımı SUID sandbox helper'ının root sahibi/4755 modunda olmaması nedeniyle durdu. Workflow, Electron'un desteklenen helper kurulumunu yapacak şekilde düzeltildi; sandbox kapatılmadı ve namespace güvenlik politikası gevşetilmedi.
+
+İlk Windows CI akışında mock teslim/kabul smoke çıktısı görüldü; kapanış adımı tamamlanmadı. Testin geçici Chromium profilini Electron çıkmadan silmesi Windows dosya kilitleriyle çakışabileceği için temizlik Node başlatıcısına taşındı; Electron çıktıktan sonra yapılır. Başlatıcı ayrıca 45 saniyelik watchdog ve başarı işareti denetimi uygular.
 
 GitHub workflow Linux ve Windows üzerinde temel kontroller ile Electron smoke testini tanımlar. Gerçek run sonuçları PR'ın Checks bölümünden doğrulanmalıdır; workflow dosyasının bulunması tek başına başarılı test anlamına gelmez. Windows CI geçerse dahi ConPTY/CLI/native güvenlik kapıları geçmiş sayılmaz.
 

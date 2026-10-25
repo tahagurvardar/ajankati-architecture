@@ -1,10 +1,15 @@
 // Runs the real production entry, preload, renderer, Node worker and SQLite.
 // Never disable Electron's sandbox in this test.
 const { app } = require("electron");
-const { mkdtempSync, rmSync, writeFileSync } = require("node:fs");
-const { tmpdir } = require("node:os");
-const { join, resolve } = require("node:path");
-const data = mkdtempSync(join(tmpdir(), "ajankati-desktop-"));
+const { writeFileSync } = require("node:fs");
+const { resolve } = require("node:path");
+const data = process.env.AJANKATI_SMOKE_DATA;
+if (!data)
+  throw new Error("Use pnpm test:desktop to create an isolated test profile");
+process.on("uncaughtException", (error) => {
+  console.error(error);
+  app.exit(1);
+});
 let passed = false;
 const timer = setTimeout(() => {
   console.error("Desktop smoke timed out");
@@ -12,7 +17,6 @@ const timer = setTimeout(() => {
 }, 20000);
 app.on("will-quit", () => {
   clearTimeout(timer);
-  rmSync(data, { recursive: true, force: true });
   if (!passed) app.exit(1);
 });
 app.on("browser-window-created", (_event, window) => {
