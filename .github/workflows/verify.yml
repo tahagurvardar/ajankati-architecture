@@ -1,0 +1,43 @@
+name: Foundation verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  foundation:
+    name: Node foundation (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      - run: pnpm demo
+      - name: Install and configure Linux sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          node node_modules/electron/install.js
+          sandbox_path="$(node -e 'const path = require("node:path"); process.stdout.write(path.join(path.dirname(require("electron")), "chrome-sandbox"))')"
+          sudo chown root:root "$sandbox_path"
+          sudo chmod 4755 "$sandbox_path"
+      - name: Electron integration smoke (sandbox enabled)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:desktop
+      - name: Electron integration smoke (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        run: pnpm test:desktop
