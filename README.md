@@ -1,6 +1,6 @@
 # AjanKatı
 
-Faz 1A: çalışan, yerel **mock** geliştirme merkezi temeli. Gerçek Claude Code/Codex, ConPTY, MCP, model API'si ve piksel ofis henüz yoktur. Bu sürüm tam MVP veya güvenli otonomi ürünü değildir.
+Faz 1B: yerel **mock** geliştirme merkezi ve gerçek Windows **ConPTY** test terminali. Claude Code/Codex, MCP, model API'si ve piksel ofis henüz bağlı değildir. Bu sürüm tam MVP veya güvenli otonomi ürünü değildir.
 
 ## Çalıştırma
 
@@ -23,6 +23,16 @@ pnpm demo
 
 Demo kendi geçici veritabanını açar ve temizler; inceleme bekleyen sahte teslimde durur. Ücretli API, gerçek CLI, shell komutu veya kullanıcı proje dosyası çalıştırmaz.
 
+## Windows terminali
+
+Dashboard altındaki **Test terminalini aç** yalnız paket içindeki `safe-echo` programını gerçek ConPTY üzerinde başlatır. Yazdığınız metin komut olarak çalıştırılmaz. Türkçe metin ve Windows yolları aynen yankılanır; `:size` konsol boyutunu, `:exit` normal çıkışı, **Ctrl+C** kesmeyi sınar. `:flood` 3 MiB tanılama çıktısı üretir; atlanan çıktı arayüzde bildirilir. Tek terminal, en fazla beş dakika; yeniden bağlanma veya arka plan çalışma yoktur.
+
+`pnpm build`, kullanılan standalone Node 24 ikilisini yerel `apps/worker/dist/terminal-node.exe` dosyasına kopyalar. Electron'un GUI ikilisinin run-as-node modu Windows konsol TTY'si sağlamadığı için terminal test programı bu sabit runtime ile açılır; PATH üzerinden executable seçilmez. Worker yine Electron'un ayrı Node sürecidir. Build çıktıları Git'e girmez; installer/imzalı dağıtım hâlâ yoktur. Windows build 18309 öncesi reddedilir, WinPTY fallback açılmaz.
+
+Worker PTY'nin tek sahibidir. Terminal IPC'si ayrı `protocol: terminal, version: 1` zarfı kullanır. Renderer executable/argv/cwd/env gönderemez; session UUID ve ana frame denetimleri zorunludur. Çıktı worker'da en fazla 524.288 UTF-16 birimi, her okumada 8.192 birim; xterm geçmişi 5.000 satırdır. Giriş 4.096 birim/istek ve 16 KiB/s; worker istemcisinde en fazla 32 bekleyen istek vardır. Terminal metni SQLite'a yazılmaz; mevcut şema ve mock kabul akışı korunur.
+
+Normal kapatma önce ETX/Ctrl+C, süre dolarsa yalnız sahip olunan PTY üzerinde kapatma uygular. Test programı worker kaybını izler ve kendi sonlu ömrünü sınırlar. Bu mekanizma **genel Job Object veya OS sandbox değildir**; gerçek CLI'lerin süreç ağacı güvenliği kanıtlanmadan bu profil genişletilmemelidir. [Faz 1B tasarım ve Windows kanıtı](docs/verification/PHASE-1B.md).
+
 ## Masaüstü akışı
 
 1. Proje adı girin ve **Proje oluştur** seçin. Bu yalnız bir envanter kaydıdır; disk klasörü kaydı veya dosya erişimi izni değildir.
@@ -38,7 +48,7 @@ Veriler Electron `appData/AjanKati-Phase1A/foundation.sqlite` dosyasında tutulu
 | Dizin | Çalışan sorumluluk |
 |---|---|
 | `apps/desktop` | Electron ana süreç, sandbox preload, Türkçe React dashboard |
-| `apps/worker` | Ayrı Node süreci, mock sevkiyat, iptal, toparlanma |
+| `apps/worker` | Ayrı Node süreci, mock sevkiyat, iptal, toparlanma, ConPTY test oturumu |
 | `packages/contracts` | Sürüm 1 Zod runtime şemaları, tipli istek/yanıt, dar DesktopApi |
 | `packages/domain` | İzinli görev durum geçişleri |
 | `packages/storage` | SQLite migration 1, FK/WAL/FULL, kısa transaction, revizyon ve hash denetimi, olaylar |
@@ -63,7 +73,7 @@ pnpm audit --prod
 
 `pnpm verify` ilk dört kontrolü sırayla çalıştırır; `pnpm test` için önce build gereklidir (gerçek child IPC testi derlenmiş worker kullanır). `pnpm test:desktop` gerçek Electron ana süreç/preload/renderer/worker/SQLite hattını geçici DB ile sınar. Linux ekransız ortamda `pnpm test:desktop --ozone-platform=headless` veya Xvfb kullanılabilir. Sandbox kapatma bayrağı eklenmez. React DOM testi gerçek servis ve SQLite'a bağlıdır; sahte bir UI API başarısı üzerine kurulmamıştır.
 
-GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. Bu, ConPTY, gerçek CLI, Windows DACL, Job Object veya sandbox yeteneklerinin kanıtı değildir. Çalıştırılmış komutlar ve sınırlamalar [Faz 1A doğrulama kaydında](docs/verification/PHASE-1A.md), sonraki Windows prosedürü [WINDOWS-CLI.md](docs/verification/WINDOWS-CLI.md) içinde bulunur. Tarihsel `docs/01–12` değiştirilmedi.
+GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. ConPTY testleri yalnız Windows'ta çalışır; Linux'ta atlanır. Gerçek CLI, Windows DACL, Job Object veya sandbox yetenekleri bu testlerle kanıtlanmaz. Tarihsel [Faz 1A kaydı](docs/verification/PHASE-1A.md) ve `docs/01–12` korunur; yeni sonuçlar [Faz 1B kaydındadır](docs/verification/PHASE-1B.md).
 
 ## Bilinen sınırlar ve güvenli kilit kurtarma
 
@@ -71,4 +81,4 @@ Worker DB yanında `.lock` dosyasıyla ikinci yazarı reddeder. Normal kapanış
 
 Kurtarmadan önce AjanKatı pencerelerini kapatın ve Görev Yöneticisi'nde ilgili Electron/Node worker süreçlerinin tamamen bittiğini doğrulayın. Hangi süreçlerin sahibi olduğundan emin değilseniz işlem yapmayın; yeniden başlatıp AjanKatı'yı henüz açmadan kontrol edin. İsterseniz **tüm** `AjanKati-Phase1A` klasörünün kopyasını alın (DB/WAL/SHM birlikte). Yalnız bu uygulamaya ait `foundation.sqlite.lock` dosyasını kaldırın; `.sqlite`, `-wal` veya `-shm` dosyalarını silmeyin. Sonra uygulamayı açın: eski `running` kayıtları `interrupted` olur, otomatik yeniden çalışmaz. Yeni deneme için tekrar **Hazırla** seçmek gerekir. Kalıcı hata varsa orijinal veriyi koruyun; boş DB ile değiştirmeyin.
 
-Sıradaki en küçük dilim: yalnız test profiliyle Windows ConPTY terminali açma, Türkçe giriş/resize/Ctrl+C/exit kanıtı. Claude/Codex yönetilen modu, gerçek onay/sandbox kanıtı olmadan açılmayacak. Ruflo/MCP/skills/API ve ofis, mevcut domain/worker sözleşmeleri üzerine sonradan eklenebilir; bu sürüm bunları taklit etmez.
+Sıradaki kilometre taşı: kontrollü Claude Code ve Codex adaptörleri. Gerçek onay/sandbox, executable kimliği ve süreç ağacı temizliği kanıtı olmadan yönetilen mod açılmayacak. Ruflo/MCP/skills/API ve ofis, mevcut domain/worker sözleşmeleri üzerine sonradan eklenebilir.

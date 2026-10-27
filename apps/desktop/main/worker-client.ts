@@ -6,10 +6,14 @@ import {
   responseSchema,
   type Command,
   type Snapshot,
+  terminalRequestSchema,
+  terminalResponseSchema,
+  type TerminalCommand,
+  type TerminalState,
 } from "@ajankati/contracts";
 
 type Pending = {
-  resolve: (snapshot: Snapshot) => void;
+  resolve: (snapshot: Snapshot | TerminalState) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 };
@@ -63,7 +67,11 @@ export class WorkerClient {
           this.child.kill();
           return;
         }
-        const parsed = responseSchema.safeParse(input);
+        const isTerminal =
+          typeof input === "object" && input !== null && "protocol" in input;
+        const parsed = isTerminal
+          ? terminalResponseSchema.safeParse(input)
+          : responseSchema.safeParse(input);
         if (!parsed.success) {
           this.failAll();
           this.child.kill();
@@ -75,7 +83,14 @@ export class WorkerClient {
         clearTimeout(waiter.timer);
         this.pending.delete(response.requestId);
         if (response.ok) waiter.resolve(response.data);
-        else waiter.reject(new Error(response.error.message));
+        else
+          waiter.reject(
+            new Error(
+              typeof response.error === "string"
+                ? response.error
+                : response.error.message,
+            ),
+          );
       });
     });
     this.child.on("exit", () => this.failAll());
@@ -89,12 +104,30 @@ export class WorkerClient {
     this.pending.clear();
   }
   async request(command: Command): Promise<Snapshot> {
+    return this.send(command, false) as Promise<Snapshot>;
+  }
+  async terminal(command: TerminalCommand): Promise<TerminalState> {
+    return this.send(command, true) as Promise<TerminalState>;
+  }
+  private async send(
+    command: Command | TerminalCommand,
+    terminal: boolean,
+  ): Promise<Snapshot | TerminalState> {
     await this.ready;
-    const request = parseRequest({
-      ...command,
-      version: 1,
-      requestId: randomUUID(),
-    });
+    if (this.pending.size >= 32)
+      throw new Error("Bekleyen istek sınırı aşıldı.");
+    const request = terminal
+      ? terminalRequestSchema.parse({
+          protocol: "terminal",
+          version: 1,
+          requestId: randomUUID(),
+          command,
+        })
+      : parseRequest({
+          ...command,
+          version: 1,
+          requestId: randomUUID(),
+        });
     if (!this.child.connected) throw new Error("İşçi bağlı değil.");
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -121,7 +154,7 @@ export class WorkerClient {
       this.child.once("exit", () => resolve());
     });
     if (this.child.connected) this.child.disconnect();
-    const timer = setTimeout(() => this.child.kill(), 5000);
+    const timer = setTimeout(() => this.child.kill(), 8000);
     await exited;
     clearTimeout(timer);
     this.failAll();

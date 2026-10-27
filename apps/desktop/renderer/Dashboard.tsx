@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import type { DesktopApi, Snapshot, TaskStatus } from "@ajankati/contracts";
 const labels: Record<TaskStatus, string> = {
   draft: "Taslak",
@@ -10,7 +16,13 @@ const labels: Record<TaskStatus, string> = {
   cancelled: "İptal edildi",
   interrupted: "Kesildi",
 };
-export function Dashboard({ api }: { api: DesktopApi }) {
+export function Dashboard({
+  api,
+  terminal,
+}: {
+  api: DesktopApi;
+  terminal?: ReactNode;
+}) {
   const [data, setData] = useState<Snapshot>({
     mode: "mock",
     projects: [],
@@ -127,7 +139,7 @@ export function Dashboard({ api }: { api: DesktopApi }) {
           </button>
         </form>
         <div className="sidebar-note">
-          FAZ 1A · YEREL TEMEL
+          FAZ 1B · YEREL TEMEL
           <br />
           Veriler SQLite içinde saklanır.
           <br />
@@ -282,6 +294,7 @@ export function Dashboard({ api }: { api: DesktopApi }) {
             )}
           </div>
         </section>
+        {terminal}
         <footer>
           Bağımsız işçi · SQLite kalıcılığı · İnsan kabulü{" "}
           <span>API / CLI / MCP henüz bağlı değil</span>

@@ -1,5 +1,7 @@
 # Faz 1A sonrası Windows / ConPTY doğrulama prosedürü
 
+Güncelleme (28 Ekim 2026): izinli test profiliyle Faz 1B uygulanıp bu laptopta doğrulandı. Güncel sonuçlar ve kalan sınırlar [PHASE-1B.md](PHASE-1B.md) içindedir. Aşağıdaki metin ilk planın tarihsel prosedürüdür; genel CLI/Job Object/DACL kapılarının geçtiği anlamına gelmez.
+
 Bu prosedür henüz tamamlanmış Windows-native uyumluluk kanıtı değildir. Faz 1A yalnız mock worker temelidir. `docs/01–12` güvenlik kapıları geçerlidir; aşağıdaki deneyler gelecek kilometre taşına aittir.
 
 ## 1. Temel sürümü Windows 11 x64 üzerinde çalıştırma

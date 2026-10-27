@@ -17,6 +17,37 @@ afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 describe("built Node worker over real child IPC and SQLite", () => {
+  it.runIf(process.platform === "win32")(
+    "owns ConPTY over versioned IPC and cleans up on desktop disconnect",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "ajankati-terminal-ipc-"));
+      dirs.push(dir);
+      const c = client(join(dir, "data.sqlite"));
+      await c.ready;
+      const session = await c.terminal({
+        method: "start",
+        payload: { profile: "safe-echo", cols: 80, rows: 24 },
+      });
+      await expect
+        .poll(
+          async () =>
+            (
+              await c.terminal({
+                method: "read",
+                payload: { sessionId: session.sessionId, cursor: 0 },
+              })
+            ).output,
+          { timeout: 8000 },
+        )
+        .toContain("READY");
+      expect((await c.request({ method: "snapshot", payload: {} })).mode).toBe(
+        "mock",
+      );
+      await c.close();
+      expect(() => process.kill(session.pid, 0)).toThrow();
+    },
+    15000,
+  );
   it("persists the full mock → review → human acceptance flow across process restarts", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ajankati-ipc-"));
     dirs.push(dir);
