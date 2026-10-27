@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi } from "@ajankati/contracts";
+import type { DesktopApi, TerminalApi } from "@ajankati/contracts";
 const api: DesktopApi = {
   snapshot: () => ipcRenderer.invoke("ajankati:snapshot", {}),
   createProject: (name) =>
@@ -16,3 +16,28 @@ const api: DesktopApi = {
     ipcRenderer.invoke("ajankati:accept", { taskId, revision, resultHash }),
 };
 contextBridge.exposeInMainWorld("ajankati", Object.freeze(api));
+const terminal: TerminalApi = {
+  styleNonce:
+    process.argv
+      .find((arg) => arg.startsWith("--ajankati-style-nonce="))
+      ?.split("=")
+      .slice(1)
+      .join("=") ?? "",
+  start: (cols, rows) =>
+    ipcRenderer.invoke("ajankati:terminal-start", {
+      profile: "safe-echo",
+      cols,
+      rows,
+    }),
+  input: (sessionId, data) =>
+    ipcRenderer.invoke("ajankati:terminal-input", { sessionId, data }),
+  read: (sessionId, cursor) =>
+    ipcRenderer.invoke("ajankati:terminal-read", { sessionId, cursor }),
+  resize: (sessionId, cols, rows) =>
+    ipcRenderer.invoke("ajankati:terminal-resize", { sessionId, cols, rows }),
+  interrupt: (sessionId) =>
+    ipcRenderer.invoke("ajankati:terminal-interrupt", { sessionId }),
+  close: (sessionId) =>
+    ipcRenderer.invoke("ajankati:terminal-close", { sessionId }),
+};
+contextBridge.exposeInMainWorld("ajankatiTerminal", Object.freeze(terminal));

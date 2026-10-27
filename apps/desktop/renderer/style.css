@@ -379,3 +379,14 @@ footer {
     flex-direction: column;
   }
 }
+.terminal-panel {
+  margin-top: 24px;
+  padding: 24px;
+}
+.terminal-surface {
+  height: 320px;
+  margin-top: 16px;
+  padding: 8px;
+  background: #000;
+  overflow: hidden;
+}

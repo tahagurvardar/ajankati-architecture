@@ -3,6 +3,11 @@ import { dirname } from "node:path";
 import { Store } from "@ajankati/storage";
 import { MockAgent } from "@ajankati/adapters";
 import { WorkerService } from "./service";
+import {
+  terminalRequestSchema,
+  type TerminalResponse,
+} from "@ajankati/contracts";
+import { TerminalHost } from "./terminal-host";
 
 async function main(): Promise<void> {
   const filename = process.argv[2];
@@ -17,10 +22,12 @@ async function main(): Promise<void> {
     store = new Store(filename);
     store.recover();
     const service = new WorkerService(store, new MockAgent());
+    const terminal = new TerminalHost(dirname(filename));
     let stopping = false;
     const stop = async () => {
       if (stopping) return;
       stopping = true;
+      await terminal.stop();
       await service.stop();
       store?.close();
       closeSync(fd);
@@ -28,6 +35,43 @@ async function main(): Promise<void> {
       process.exit(0);
     };
     process.on("message", (message: unknown) => {
+      if (stopping) return;
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "protocol" in message
+      ) {
+        const parsed = terminalRequestSchema.safeParse(message);
+        if (!parsed.success) {
+          void stop();
+          return;
+        }
+        const { requestId, command } = parsed.data;
+        const send = (response: TerminalResponse) => {
+          if (process.connected) process.send?.(response);
+        };
+        void terminal
+          .execute(command)
+          .then((data) =>
+            send({
+              protocol: "terminal",
+              version: 1,
+              requestId,
+              ok: true,
+              data,
+            }),
+          )
+          .catch(() =>
+            send({
+              protocol: "terminal",
+              version: 1,
+              requestId,
+              ok: false,
+              error: "Terminal işlemi reddedildi veya ConPTY kullanılamıyor.",
+            }),
+          );
+        return;
+      }
       void service
         .handle(message)
         .then((response) => {

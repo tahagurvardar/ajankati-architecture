@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, session } from "electron";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseRequest } from "@ajankati/contracts";
+import { randomBytes } from "node:crypto";
+import { parseRequest, terminalCommandSchema } from "@ajankati/contracts";
 import { WorkerClient } from "./worker-client";
 
 let window: BrowserWindow | undefined;
@@ -26,6 +27,19 @@ else {
       await worker.ready;
       const page = join(__dirname, "renderer/index.html");
       const trustedUrl = pathToFileURL(page).href;
+      const styleNonce = randomBytes(24).toString("base64");
+      session.defaultSession.webRequest.onHeadersReceived(
+        (details, callback) => {
+          callback({
+            responseHeaders: {
+              ...details.responseHeaders,
+              "Content-Security-Policy": [
+                `default-src 'self'; script-src 'self'; style-src 'self' 'nonce-${styleNonce}'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`,
+              ],
+            },
+          });
+        },
+      );
       window = new BrowserWindow({
         width: 1200,
         height: 820,
@@ -39,6 +53,7 @@ else {
           nodeIntegration: false,
           sandbox: true,
           webSecurity: true,
+          additionalArguments: [`--ajankati-style-nonce=${styleNonce}`],
         },
       });
       session.defaultSession.setPermissionRequestHandler(
@@ -48,6 +63,12 @@ else {
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       for (const [channel, method] of Object.entries({
+        "ajankati:terminal-start": "start",
+        "ajankati:terminal-input": "input",
+        "ajankati:terminal-read": "read",
+        "ajankati:terminal-resize": "resize",
+        "ajankati:terminal-interrupt": "interrupt",
+        "ajankati:terminal-close": "close",
         "ajankati:snapshot": "snapshot",
         "ajankati:create-project": "project.create",
         "ajankati:create-task": "task.create",
@@ -65,11 +86,26 @@ else {
           )
             throw new Error("Yetkisiz pencere.");
           // Runtime schemas are validated again by client and worker; channel chooses authority.
+          if (channel.startsWith("ajankati:terminal-"))
+            return worker!.terminal(
+              terminalCommandSchema.parse({ method, payload }),
+            );
           return worker!.request(
             parseRequest({ version: 1, requestId: "desktop", method, payload }),
           );
         });
       }
+      window.webContents.on("render-process-gone", () => app.quit());
+      // Reload creates a new renderer epoch: tear down the old owner, never reattach silently.
+      window.webContents.on("will-navigate", () => app.quit());
+      window.webContents.once("did-finish-load", () => {
+        window?.webContents.on(
+          "did-start-navigation",
+          (_event, _url, _inPlace, isMainFrame) => {
+            if (isMainFrame) app.quit();
+          },
+        );
+      });
       await window.loadFile(page);
       window.on("closed", () => {
         window = undefined;
