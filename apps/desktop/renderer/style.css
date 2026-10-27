@@ -390,3 +390,48 @@ footer {
   background: #000;
   overflow: hidden;
 }
+
+.agents-panel {
+  margin: 24px 0;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #ddd8cf;
+  border-radius: 12px;
+}
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.agent-card {
+  padding: 18px;
+  border: 1px solid #ddd8cf;
+  border-radius: 8px;
+  min-width: 0;
+}
+.agent-path {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  font-size: 12px;
+}
+.agent-card dt {
+  font-weight: 600;
+  margin-top: 8px;
+}
+.agent-card dd {
+  margin: 3px 0 8px;
+}
+.agent-card details {
+  margin-top: 16px;
+}
+.agent-card summary {
+  cursor: pointer;
+}
+.agent-card > small {
+  display: block;
+  margin-bottom: 12px;
+}
+.agent-card > button {
+  max-width: 100%;
+  white-space: normal;
+}

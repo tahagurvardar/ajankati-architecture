@@ -55,6 +55,48 @@ app.on("browser-window-created", (_event, window) => {
         if (state.tasks[0].status !== 'succeeded') throw new Error('Acceptance failed');
       })()`);
       console.log("SMOKE mock acceptance completed");
+      await window.webContents.executeJavaScript(`(async () => {
+        if (!document.querySelector('.agents-panel')?.textContent.includes('Ajanlar')) throw new Error('Missing agents view');
+        const state = await window.ajankatiAgents.discover();
+        if (state.integrations.length !== 2 || state.integrations.some(row => row.enabled || row.verified)) throw new Error('Discovery fabricated readiness');
+        let rejected = false;
+        try { await window.ajankatiAgents.verify('codex-cli', 'invalid-token'); } catch { rejected = true; }
+        if (!rejected) throw new Error('Invalid approval accepted');
+        document.querySelector('.agents-panel button').click();
+        await new Promise(resolve => setTimeout(resolve,50));
+        for (let i=0; i<100; i++) {
+          if (document.querySelectorAll('.agent-card').length === 2 && !document.querySelector('.agents-panel button').disabled && !document.querySelector('.agents-panel').textContent.includes('Henüz keşfedilmedi')) return;
+          await new Promise(resolve => setTimeout(resolve,30));
+        }
+        throw new Error('Discovery did not reach agents UI');
+      })()`);
+      console.log(
+        "PASS agents discovery → preload → worker → Turkish UI; no automatic version process",
+      );
+      // Local manual opt-in only; CI never launches installed provider CLIs.
+      if (process.env.AJANKATI_SMOKE_APPROVE_AGENT_VERSIONS === "1") {
+        const versions = await window.webContents
+          .executeJavaScript(`(async () => {
+          for (const card of document.querySelectorAll('.agent-card')) {
+            const button = card.querySelector('button');
+            if (!button) throw new Error('Approved manual verification requires both installed CLIs');
+            button.click();
+            await new Promise(resolve=>setTimeout(resolve,50));
+            for (let i=0;i<150;i++) {
+              if (!document.querySelector('.agents-panel button').disabled) break;
+              await new Promise(resolve=>setTimeout(resolve,50));
+            }
+            if (!card.textContent.includes('Yalnız sürüm doğrulandı')) throw new Error('Version verification failed: ' + card.textContent);
+          }
+          const state = await window.ajankatiAgents.list();
+          if (state.integrations.some(row=>!row.verified || row.enabled)) throw new Error('Incorrect version-only status');
+          return state.integrations.map(row=>({provider:row.provider,version:row.detectedVersion}));
+        })()`);
+        console.log(
+          "PASS explicitly approved Windows UI version checks",
+          versions,
+        );
+      }
       if (unexpectedCspError) throw new Error("Terminal styles violated CSP");
       probingCsp = true;
       await window.webContents.executeJavaScript(`(async () => {
@@ -103,6 +145,10 @@ app.on("browser-window-created", (_event, window) => {
           "PASS Windows ConPTY → xterm Unicode keyboard roundtrip → Ctrl+C → exit",
         );
       }
+      if (process.env.AJANKATI_SMOKE_SCREENSHOT)
+        await window.webContents.executeJavaScript(
+          "new Promise(resolve => { document.querySelector('.agents-panel').scrollIntoView({behavior:'instant',block:'start'}); setTimeout(resolve,150); })",
+        );
       if (process.env.AJANKATI_SMOKE_SCREENSHOT)
         writeFileSync(
           process.env.AJANKATI_SMOKE_SCREENSHOT,

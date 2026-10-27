@@ -2,7 +2,11 @@ import { app, BrowserWindow, ipcMain, session } from "electron";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
-import { parseRequest, terminalCommandSchema } from "@ajankati/contracts";
+import {
+  parseRequest,
+  terminalCommandSchema,
+  agentCommandSchema,
+} from "@ajankati/contracts";
 import { WorkerClient } from "./worker-client";
 
 let window: BrowserWindow | undefined;
@@ -63,6 +67,9 @@ else {
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       for (const [channel, method] of Object.entries({
+        "ajankati:agents-list": "list",
+        "ajankati:agents-discover": "discover",
+        "ajankati:agents-verify": "verify",
         "ajankati:terminal-start": "start",
         "ajankati:terminal-input": "input",
         "ajankati:terminal-read": "read",
@@ -86,6 +93,10 @@ else {
           )
             throw new Error("Yetkisiz pencere.");
           // Runtime schemas are validated again by client and worker; channel chooses authority.
+          if (channel.startsWith("ajankati:agents-"))
+            return worker!.agents(
+              agentCommandSchema.parse({ method, payload }),
+            );
           if (channel.startsWith("ajankati:terminal-"))
             return worker!.terminal(
               terminalCommandSchema.parse({ method, payload }),

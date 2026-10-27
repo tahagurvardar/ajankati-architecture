@@ -19,9 +19,11 @@ const labels: Record<TaskStatus, string> = {
 export function Dashboard({
   api,
   terminal,
+  agents,
 }: {
   api: DesktopApi;
   terminal?: ReactNode;
+  agents?: ReactNode;
 }) {
   const [data, setData] = useState<Snapshot>({
     mode: "mock",
@@ -139,7 +141,7 @@ export function Dashboard({
           </button>
         </form>
         <div className="sidebar-note">
-          FAZ 1B · YEREL TEMEL
+          FAZ 1C-1 · CLI KEŞFİ
           <br />
           Veriler SQLite içinde saklanır.
           <br />
@@ -294,10 +296,11 @@ export function Dashboard({
             )}
           </div>
         </section>
+        {agents}
         {terminal}
         <footer>
           Bağımsız işçi · SQLite kalıcılığı · İnsan kabulü{" "}
-          <span>API / CLI / MCP henüz bağlı değil</span>
+          <span>Gerçek ajan oturumları / API / MCP etkin değil</span>
         </footer>
       </main>
     </div>
