@@ -52,7 +52,7 @@ describe("agent discovery boundaries", () => {
     });
     await registry.execute({ method: "discover", payload: {} });
     expect(opened.mock.calls.map((call) => call[0])).toEqual([
-      join(dir, "codex.cmd"),
+      await fsAsync.realpath(join(dir, "codex.cmd")),
     ]);
   });
   it("rejects obsolete approvals after rediscovery and blocks overlapping verification", async () => {
@@ -232,7 +232,7 @@ describe("agent discovery boundaries", () => {
       directories: [dir],
       platform: "win32",
       probe: async (path) => {
-        expect(path).toBe(join(native, "codex.exe"));
+        expect(path).toBe(await fsAsync.realpath(join(native, "codex.exe")));
         return { output: "codex-cli 99.0.0-beta.1", error: null };
       },
     });

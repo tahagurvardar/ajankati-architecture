@@ -52,6 +52,8 @@ Yerel sonuçlar:
 
 İlk yeni credential testinde ESM namespace'e doğrudan spy takılamadı; gerçek `open` işlemini koruyan modül sarmalayıcısıyla düzeltildi. Opt-in smoke'un ilk denemesinde React keşif güncellemesi beklenmedi; sonuç durumunu bekleme eklenerek gerçek UI akışı tekrar geçti. Bunlar son başarılı sonuçların öncesindeki gözlenen test hatalarıdır. Geçersiz UUID olumsuz testi Electron log'unda beklenen IPC reddi üretir.
 
+İlk PR CI turunda Linux geçti; Windows runner'ın `RUNNER~1` kısa TEMP yolu nedeniyle iki test ham yol/kanonik yol karşılaştırmasında kaldı. Uygulama doğru uzun yolu çözüyordu; beklentiler `realpath` ile aynı dosya kimliğine bağlandı. Güvenlik filtresi veya assertion kapsamı gevşetilmedi.
+
 Vite'ın mevcut 500 kB parça uyarısı sürer (renderer yaklaşık 566 kB); kaynak performans hedefi ölçüldü iddiası yoktur. Smoke'un gerçek pencere görüntüsü araçla incelendi; insan tarafından elle klavye/fare kabul testi veya Windows dosya erişim trace'i yapılmış sayılmaz. GitHub Linux/Windows PR kapıları ayrıca izlenir; yerel Windows sonucu Linux kanıtı yerine kullanılmaz.
 
 ## Açık sınırlar ve sonraki adım
