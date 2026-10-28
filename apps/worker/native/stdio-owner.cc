@@ -27,7 +27,7 @@ struct Owner {
   Handle job, process, input, output, error, image;
   std::vector<std::unique_ptr<Handle>> directories;
   DWORD pid = 0;
-  bool verified = false, closed = false;
+  bool verified = false, closed = false, stdoutClosed = false, stderrClosed = false;
 #ifdef AJANKATI_TEST
   bool cleanupFailure = false;
   std::wstring testStage, testCheckpoint;
@@ -347,7 +347,14 @@ static napi_value Snapshot(napi_env env, napi_callback_info info) {
   napi_create_uint32(env, active, &value); napi_set_named_property(env, result, "active", value);
   napi_create_uint32(env, owner->pid, &value); napi_set_named_property(env, result, "pid", value);
   napi_get_boolean(env, owner->verified, &value); napi_set_named_property(env, result, "verified", value);
-  napi_get_boolean(env, WaitForSingleObject(owner->process.h, 0) == WAIT_OBJECT_0, &value); napi_set_named_property(env, result, "exited", value);
+  bool exited = WaitForSingleObject(owner->process.h, 0) == WAIT_OBJECT_0;
+  napi_get_boolean(env, exited, &value); napi_set_named_property(env, result, "exited", value);
+  DWORD exitCode = 0;
+  if (exited && GetExitCodeProcess(owner->process.h, &exitCode)) napi_create_uint32(env, exitCode, &value);
+  else napi_get_null(env, &value);
+  napi_set_named_property(env, result, "exitCode", value);
+  napi_get_boolean(env, owner->stdoutClosed, &value); napi_set_named_property(env, result, "stdoutClosed", value);
+  napi_get_boolean(env, owner->stderrClosed, &value); napi_set_named_property(env, result, "stderrClosed", value);
   DWORD handles = 0; GetProcessHandleCount(GetCurrentProcess(), &handles);
   napi_create_uint32(env, handles, &value); napi_set_named_property(env, result, "handles", value);
   return result;
@@ -362,6 +369,7 @@ static napi_value Read(napi_env env, napi_callback_info info) {
   DWORD available = 0, countRead = 0; BYTE buffer[16384];
   if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) {
     if (GetLastError() != ERROR_BROKEN_PIPE) return Fail(env, "PIPE_READ_FAILED");
+    (error ? owner->stderrClosed : owner->stdoutClosed) = true;
   } else if (available && !ReadFile(pipe, buffer, std::min<DWORD>(available, sizeof(buffer)), &countRead, nullptr)) return Fail(env, "PIPE_READ_FAILED");
   napi_value result; napi_create_buffer_copy(env, countRead, buffer, nullptr, &result); return result;
 }
