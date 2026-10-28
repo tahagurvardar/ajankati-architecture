@@ -6,10 +6,12 @@ import { WorkerService } from "./service";
 import {
   terminalRequestSchema,
   agentRequestSchema,
+  sessionRequestSchema,
   type TerminalResponse,
 } from "@ajankati/contracts";
 import { TerminalHost } from "./terminal-host";
 import { AgentRegistry } from "./agent-registry";
+import { SessionHost } from "./session-host";
 
 async function main(): Promise<void> {
   const filename = process.argv[2];
@@ -26,6 +28,7 @@ async function main(): Promise<void> {
     const service = new WorkerService(store, new MockAgent());
     const terminal = new TerminalHost(dirname(filename));
     const agents = new AgentRegistry();
+    const sessions = new SessionHost(store);
     let stopping = false;
     const stop = async () => {
       if (stopping) return;
@@ -40,6 +43,37 @@ async function main(): Promise<void> {
     };
     process.on("message", (message: unknown) => {
       if (stopping) return;
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "protocol" in message &&
+        message.protocol === "sessions"
+      ) {
+        const parsed = sessionRequestSchema.safeParse(message);
+        if (!parsed.success) {
+          void stop();
+          return;
+        }
+        const envelope = {
+          protocol: "sessions",
+          version: 1,
+          requestId: parsed.data.requestId,
+        };
+        try {
+          const data = sessions.execute(parsed.data.command);
+          if (process.connected)
+            process.send?.({ ...envelope, ok: true, data });
+        } catch {
+          if (process.connected)
+            process.send?.({
+              ...envelope,
+              ok: false,
+              error:
+                "Canlı Codex pilotu kapalı; güvenlik ve uyumluluk kapıları tamamlanmadı.",
+            });
+        }
+        return;
+      }
       if (
         typeof message === "object" &&
         message !== null &&

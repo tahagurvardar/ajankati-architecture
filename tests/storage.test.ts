@@ -27,7 +27,7 @@ describe("SQLite transactional workflow", () => {
     expect(reopened.snapshot().projects).toEqual([p]);
     expect(reopened.getTask(t.id)).toEqual(t);
     expect(reopened.snapshot().events).toHaveLength(2);
-    expect(reopened.schemaVersion()).toBe(1);
+    expect(reopened.schemaVersion()).toBe(2);
   });
   it("rejects orphan tasks and stale revisions without writing events", () => {
     const s = open();

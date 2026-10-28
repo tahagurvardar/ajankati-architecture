@@ -52,3 +52,14 @@ const agents: AgentApi = {
     }),
 };
 contextBridge.exposeInMainWorld("ajankatiAgents", Object.freeze(agents));
+import type { SessionApi } from "@ajankati/contracts";
+const sessions: SessionApi = {
+  list: () => ipcRenderer.invoke("ajankati:sessions-list", {}),
+  start: (projectId, approved) =>
+    ipcRenderer.invoke("ajankati:sessions-start", { projectId, approved }),
+  interrupt: (sessionId) =>
+    ipcRenderer.invoke("ajankati:sessions-interrupt", { sessionId }),
+  terminate: (sessionId) =>
+    ipcRenderer.invoke("ajankati:sessions-terminate", { sessionId }),
+};
+contextBridge.exposeInMainWorld("ajankatiSessions", Object.freeze(sessions));

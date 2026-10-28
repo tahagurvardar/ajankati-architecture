@@ -13,10 +13,12 @@ export function Dashboard({
   api,
   terminal,
   agents,
+  reports,
 }: {
   api: DesktopApi;
   terminal?: ReactNode;
   agents?: ReactNode;
+  reports?: ReactNode;
 }) {
   const [data, setData] = useState<Snapshot>({
     mode: "mock",
@@ -159,12 +161,14 @@ export function Dashboard({
       </div>
       <div hidden={route !== "agents"}>{visited.agents && agents}</div>
       <div hidden={route !== "terminal"}>{visited.terminal && terminal}</div>
+      {route === "reports" && reports}
       {route !== "overview" &&
         route !== "projects" &&
         route !== "agents" &&
-        route !== "terminal" && (
+        route !== "terminal" &&
+        (route === "reports" && reports ? null : (
           <UnavailableView route={route} onNavigate={navigate} />
-        )}
+        ))}
       <footer>
         Yerel kayıtlar · İnsan kabulü{" "}
         <span>Gerçek ajan oturumları / API / MCP etkin değil</span>
