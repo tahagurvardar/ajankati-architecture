@@ -17,7 +17,10 @@ import { dirname, join, resolve } from "node:path";
 import { Store } from "../packages/storage/src/index";
 import type { SessionUsage } from "../packages/contracts/src/index";
 import { initializeOnly } from "../apps/worker/src/codex-handshake";
-import { createNativeProbeTransport } from "../apps/worker/src/native-stdio";
+import {
+  createNativeProbeTransport,
+  StdioError,
+} from "../apps/worker/src/native-stdio";
 
 // Standalone operator tool, intentionally absent from desktop IPC and CI scripts.
 const root = resolve(__dirname);
@@ -150,9 +153,13 @@ async function main(): Promise<void> {
     const started = performance.now();
     const transport = createNativeProbeTransport(plan.profile);
     let initialized = false;
+    let failureCode: string | undefined;
     try {
       await initializeOnly(transport);
       initialized = true;
+    } catch (error) {
+      failureCode = error instanceof StdioError ? error.code : "PROBE_FAILED";
+      process.exitCode = 1;
     } finally {
       cleaned = await transport.terminate();
       row.status = initialized ? "completed" : "failed";
@@ -171,7 +178,12 @@ async function main(): Promise<void> {
           initialized,
           cleaned,
           pid: transport.pid,
-          error: transport.error?.code,
+          error: failureCode ?? transport.error?.code,
+          transportError: transport.error?.code,
+          providerExitCode: transport.providerExitCode,
+          stderrBytes: transport.stderrBytes,
+          stdoutBytes: transport.stdoutBytes,
+          outputDrained: transport.outputDrained,
           durationMs: row.durationMs,
           tokens: "UNKNOWN",
           cost: "UNKNOWN",
@@ -185,6 +197,18 @@ async function main(): Promise<void> {
   }
 }
 void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "PROBE_FAILED");
+  const safe = new Set([
+    "WINDOWS_X64_REQUIRED",
+    "ANCESTOR_CONFIG_REVIEW_REQUIRED",
+    "PROBE_PLAN_ALREADY_EXISTS",
+    "IDENTITY_REJECTED",
+    "INVALID_PROBE_PLAN",
+    "PROFILE_CHANGED",
+  ]);
+  console.error(
+    error instanceof Error && safe.has(error.message)
+      ? error.message
+      : "PROBE_FAILED",
+  );
   process.exitCode = 1;
 });

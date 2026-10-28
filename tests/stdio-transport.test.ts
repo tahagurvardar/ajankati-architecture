@@ -11,6 +11,65 @@ const start = () =>
     }),
   );
 
+it.runIf(process.platform === "win32").each([
+  ["early-exit", "PROCESS_EXIT", 23],
+  ["partial", "PARTIAL_FRAME", 0],
+  ["close-output", "STDOUT_CLOSED", null],
+  ["late-request", "UNEXPECTED_REQUEST", null],
+] as const)(
+  "classifies %s and drains before verified cleanup",
+  async (mode, code, exitCode) => {
+    const transport = start();
+    // Replace only the initialize payload at the test boundary, never run a provider.
+    const write = transport.write.bind(transport);
+    transport.write = (line) =>
+      write(line.includes('"method":"initialize"') ? mode + "\n" : line);
+    await expect(initializeOnly(transport)).rejects.toThrow(code);
+    expect(await transport.terminate()).toBe(true);
+    expect(transport.providerExitCode).toBe(exitCode);
+    expect(transport.outputDrained).toBe(true);
+  },
+);
+
+it.runIf(process.platform === "win32")(
+  "accepts combined JSONL from the native fixture",
+  async () => {
+    const transport = start();
+    const write = transport.write.bind(transport);
+    transport.write = (line) =>
+      write(line.includes('"method":"initialize"') ? "combined\n" : line);
+    await expect(initializeOnly(transport)).resolves.toEqual({
+      initialized: true,
+      cleaned: true,
+    });
+    expect(transport.outputDrained).toBe(true);
+  },
+);
+
+it.runIf(process.platform === "win32")(
+  "delivers all buffered bytes before exit, including stderr count",
+  async () => {
+    const transport = start();
+    let bytes = 0;
+    const exited = new Promise<void>((resolve) =>
+      transport.subscribe((chunk) => {
+        bytes += chunk.length;
+      }, resolve),
+    );
+    try {
+      transport.write("exit-burst\n");
+      await exited;
+      expect(bytes).toBe(48001);
+      expect(transport.stderrBytes).toBe(48001);
+      expect(transport.providerExitCode).toBe(23);
+      expect(transport.outputDrained).toBe(true);
+      expect(transport.error?.code).toBe("PROCESS_EXIT");
+    } finally {
+      expect(await transport.terminate()).toBe(true);
+    }
+  },
+);
+
 it.runIf(process.platform === "win32").each(["invalid", "partial"])(
   "rejects real native %s output and confirms tree cleanup",
   async (mode) => {

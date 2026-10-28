@@ -24,6 +24,26 @@ int wmain(int argc, wchar_t** argv) {
   while (ReadFile(GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &count, nullptr) && count) {
     std::string input(buffer, count);
     if (input.find("stall") != std::string::npos) { Sleep(60000); return 0; }
+    if (input.find("early-exit") != std::string::npos) return 23;
+    if (input.find("close-output") != std::string::npos) {
+      CloseHandle(GetStdHandle(STD_OUTPUT_HANDLE)); Sleep(60000); return 0;
+    }
+    if (input.find("exit-burst") != std::string::npos) {
+      std::string bytes(48000, 'x'); bytes += '\n';
+      WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), bytes.data(), static_cast<DWORD>(bytes.size()), &count, nullptr);
+      WriteFile(GetStdHandle(STD_ERROR_HANDLE), bytes.data(), static_cast<DWORD>(bytes.size()), &count, nullptr);
+      return 23;
+    }
+    if (input.find("combined") != std::string::npos) {
+      const char reply[] = "{\"method\":\"warning\",\"params\":{\"message\":\"fixture\"}}\n{\"id\":1,\"result\":{\"userAgent\":\"fixture\"}}\n";
+      WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), reply, sizeof(reply)-1, &count, nullptr);
+      continue;
+    }
+    if (input.find("late-request") != std::string::npos) {
+      const char reply[] = "{\"id\":1,\"result\":{\"userAgent\":\"fixture\"}}\n{\"id\":2,\"method\":\"execCommandApproval\",\"params\":{}}\n";
+      WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), reply, sizeof(reply)-1, &count, nullptr);
+      continue;
+    }
     if (input.find("partial") != std::string::npos) {
       WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), "{", 1, &count, nullptr); return 0;
     }
@@ -34,7 +54,7 @@ int wmain(int argc, wchar_t** argv) {
     if (input.find("initialize") != std::string::npos && input.find("initialized") == std::string::npos) {
       const char reply[] = "{\"id\":1,\"result\":{\"userAgent\":\"fixture\"}}\n";
       WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), reply, sizeof(reply)-1, &count, nullptr);
-    } else WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buffer, count, &count, nullptr);
+    } else if (input.find("initialized") == std::string::npos) WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buffer, count, &count, nullptr);
   }
   return 0;
 }

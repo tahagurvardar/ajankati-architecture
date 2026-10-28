@@ -25,6 +25,10 @@ export class NativeStdioTransport implements CodexTransport {
   private timer: ReturnType<typeof setTimeout>;
   error?: StdioError;
   pid?: number;
+  providerExitCode: number | null = null;
+  stderrBytes = 0;
+  stdoutBytes = 0;
+  outputDrained = false;
   constructor(private thread: Worker) {
     this.completed = new Promise((resolve) => {
       this.complete = resolve;
@@ -33,6 +37,10 @@ export class NativeStdioTransport implements CodexTransport {
     thread.on("message", (message) => {
       if (this.closed) return;
       if (message.kind === "closed") {
+        this.providerExitCode = message.providerExitCode ?? null;
+        this.stderrBytes = message.stderrBytes ?? 0;
+        this.stdoutBytes = message.stdoutBytes ?? 0;
+        this.outputDrained = message.outputDrained === true;
         if (message.code !== "STOPPED")
           this.error = new StdioError(message.code);
         this.finish(message.cleaned === true);
