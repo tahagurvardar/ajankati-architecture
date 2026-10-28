@@ -17,6 +17,29 @@ afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 describe("built Node worker over real child IPC and SQLite", () => {
+  it("reports the blocked Codex pilot through sessions/v1 and cannot launch even with approval", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ajankati-session-ipc-"));
+    dirs.push(dir);
+    const c = client(join(dir, "data.sqlite"));
+    await c.ready;
+    const snapshot = await c.request({ method: "snapshot", payload: {} });
+    const state = await c.sessions({ method: "list", payload: {} });
+    expect(state.capability.liveLaunch).toBe(false);
+    expect(state.capability.blockers.length).toBeGreaterThan(0);
+    expect(state.sessions).toEqual([]);
+    await expect(
+      c.sessions({
+        method: "start",
+        payload: { projectId: "p", approved: true },
+      }),
+    ).rejects.toThrow("kapalı");
+    await expect(
+      c.sessions({ method: "terminate", payload: { sessionId: "forged" } }),
+    ).rejects.toThrow();
+    expect(await c.request({ method: "snapshot", payload: {} })).toEqual(
+      snapshot,
+    );
+  });
   it("exposes agents v1 without changing the mock snapshot and rejects forged paths", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ajankati-agents-ipc-"));
     dirs.push(dir);

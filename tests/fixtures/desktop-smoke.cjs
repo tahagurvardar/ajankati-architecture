@@ -63,6 +63,16 @@ app.on("browser-window-created", (_event, window) => {
         if (state.tasks[0].status !== 'succeeded') throw new Error('Acceptance failed');
       })()`);
       console.log("SMOKE mock acceptance completed");
+      await navigate("reports");
+      await window.webContents.executeJavaScript(`(async () => {
+        const state = await window.ajankatiSessions.list();
+        if (state.capability.liveLaunch !== false || state.sessions.length !== 0) throw new Error('Unsafe pilot state');
+        let rejected = false;
+        try { await window.ajankatiSessions.start('p', true); } catch { rejected = true; }
+        if (!rejected) throw new Error('Live pilot launch was not blocked');
+        if (!document.body.textContent.includes('Maliyet ve Kullanım')) throw new Error('Missing usage UI');
+      })()`);
+      console.log("SMOKE sessions/v1 blocked; no inference");
       await navigate("overview");
       await window.webContents.executeJavaScript(`(async () => {
         document.querySelector('.page-heading button').click();

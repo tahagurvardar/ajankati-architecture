@@ -6,6 +6,7 @@ import {
   parseRequest,
   terminalCommandSchema,
   agentCommandSchema,
+  sessionCommandSchema,
 } from "@ajankati/contracts";
 import { WorkerClient } from "./worker-client";
 
@@ -67,6 +68,10 @@ else {
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       for (const [channel, method] of Object.entries({
+        "ajankati:sessions-list": "list",
+        "ajankati:sessions-start": "start",
+        "ajankati:sessions-interrupt": "interrupt",
+        "ajankati:sessions-terminate": "terminate",
         "ajankati:agents-list": "list",
         "ajankati:agents-discover": "discover",
         "ajankati:agents-verify": "verify",
@@ -93,6 +98,10 @@ else {
           )
             throw new Error("Yetkisiz pencere.");
           // Runtime schemas are validated again by client and worker; channel chooses authority.
+          if (channel.startsWith("ajankati:sessions-"))
+            return worker!.sessions(
+              sessionCommandSchema.parse({ method, payload }),
+            );
           if (channel.startsWith("ajankati:agents-"))
             return worker!.agents(
               agentCommandSchema.parse({ method, payload }),

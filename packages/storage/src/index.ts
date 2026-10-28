@@ -5,6 +5,8 @@ import {
   projectSchema,
   taskSchema,
   eventSchema,
+  sessionUsageSchema,
+  type SessionUsage,
   type Project,
   type Task,
   type TaskStatus,
@@ -21,6 +23,16 @@ CREATE TABLE events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, entityId TEXT N
 CREATE INDEX tasks_project ON tasks(projectId);
 PRAGMA user_version=1;
 `;
+const migration2 = `
+CREATE TABLE sessions (
+ sessionId TEXT PRIMARY KEY, projectId TEXT NOT NULL REFERENCES projects(id),
+ runId TEXT NOT NULL UNIQUE, status TEXT NOT NULL, metadata TEXT NOT NULL CHECK(json_valid(metadata))
+);
+CREATE UNIQUE INDEX one_active_session ON sessions((1))
+ WHERE status IN ('starting','running','awaiting_approval','stopping')
+ OR json_extract(metadata,'$.reason') IN ('CLEANUP_UNCONFIRMED','WORKER_RESTART');
+PRAGMA user_version=2;
+`;
 
 /** Only the worker owns this connection; never imported by the renderer. */
 export class Store {
@@ -33,8 +45,19 @@ export class Store {
         "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=1000;",
       );
       const version = this.schemaVersion();
-      if (version > 1) throw new Error("Veritabanı sürümü desteklenmiyor.");
-      if (version === 0) this.transaction(() => this.db.exec(migration1));
+      if (version > 2) throw new Error("Veritabanı sürümü desteklenmiyor.");
+      if (this.db.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
+        throw new Error("Veritabanı bütünlüğü doğrulanamadı.");
+      if (version === 0)
+        this.transaction(() => this.db.exec(migration1 + migration2));
+      if (version === 1) {
+        // SQLite creates a consistent snapshot including committed WAL pages.
+        // Never overwrite a backup or replace a broken database with an empty one.
+        this.db
+          .prepare("VACUUM INTO ?")
+          .run(`${filename}.backup-v1-${randomUUID()}`);
+        this.transaction(() => this.db.exec(migration2));
+      }
     } catch (error) {
       this.db.close();
       throw error;
@@ -218,10 +241,79 @@ export class Store {
   recover(): void {
     this.transaction(() => {
       for (const row of this.db
+        .prepare(
+          "SELECT metadata FROM sessions WHERE status IN ('starting','running','awaiting_approval','stopping')",
+        )
+        .all()) {
+        const session = sessionUsageSchema.parse(
+          JSON.parse(String(row.metadata)),
+        );
+        session.status = "interrupted";
+        session.reason = "WORKER_RESTART";
+        // Actual process end time is unknown after a crash. Do not count downtime.
+        session.endedAt = null;
+        session.durationMs = null;
+        this.db
+          .prepare("UPDATE sessions SET status=?,metadata=? WHERE sessionId=?")
+          .run(session.status, JSON.stringify(session), session.sessionId);
+      }
+      for (const row of this.db
         .prepare("SELECT * FROM tasks WHERE status='running'")
         .all())
         this.update(taskSchema.parse(row), "interrupted");
     });
+  }
+  saveSession(input: SessionUsage): void {
+    const row = sessionUsageSchema.parse(input);
+    this.transaction(() => {
+      const old = this.db
+        .prepare("SELECT metadata FROM sessions WHERE sessionId=?")
+        .get(row.sessionId);
+      if (old) {
+        const previous = sessionUsageSchema.parse(
+          JSON.parse(String(old.metadata)),
+        );
+        if (
+          !["starting", "running", "awaiting_approval", "stopping"].includes(
+            previous.status,
+          ) ||
+          [
+            "projectId",
+            "runId",
+            "startedAt",
+            "source",
+            "cliIdentity",
+            "cliVersion",
+          ].some(
+            (key) =>
+              previous[key as keyof SessionUsage] !==
+              row[key as keyof SessionUsage],
+          )
+        )
+          throw new Error("Eski veya değişmiş oturum.");
+        this.db
+          .prepare("UPDATE sessions SET status=?,metadata=? WHERE sessionId=?")
+          .run(row.status, JSON.stringify(row), row.sessionId);
+      } else {
+        if (row.status !== "starting")
+          throw new Error("Oturum başlangıcı gerekli.");
+        this.db
+          .prepare("INSERT INTO sessions VALUES(?,?,?,?,?)")
+          .run(
+            row.sessionId,
+            row.projectId,
+            row.runId,
+            row.status,
+            JSON.stringify(row),
+          );
+      }
+    });
+  }
+  sessions(): SessionUsage[] {
+    return this.db
+      .prepare("SELECT metadata FROM sessions ORDER BY rowid DESC LIMIT 100")
+      .all()
+      .map((row) => sessionUsageSchema.parse(JSON.parse(String(row.metadata))));
   }
   snapshot(): Snapshot {
     return {
