@@ -3,9 +3,10 @@ import { TextDecoder } from "node:util";
 import { z } from "zod";
 import { MAX_FRAME_BYTES, type SessionUsage } from "@ajankati/contracts";
 import type { Store } from "@ajankati/storage";
+import { initializeRequest } from "./codex-handshake";
 
-/** Transport MUST own its process tree and confirm cleanup. No live implementation
- * exists yet. Only fixtures instantiate this protocol driver; no IPC can inject it. */
+/** Transport MUST own its process tree and confirm cleanup. The native implementation
+ * is used only by the separate handshake probe. This turn driver stays fixture-only. */
 export interface CodexTransport {
   subscribe(data: (chunk: Buffer) => void, exit: () => void): () => void;
   write(jsonLine: string): void;
@@ -115,14 +116,7 @@ export class CodexProtocolSession {
       this.deadline = setTimeout(() => {
         void this.finish("failed", "TIMEOUT");
       }, this.limits.deadlineMs);
-      this.send({
-        id: 1,
-        method: "initialize",
-        params: {
-          clientInfo: { name: "ajankati", title: "AjanKati", version: "0.1.0" },
-          capabilities: { experimentalApi: false },
-        },
-      });
+      this.send(initializeRequest());
     } catch {
       void this.finish("failed", "PROTOCOL_ERROR");
     }

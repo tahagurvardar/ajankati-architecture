@@ -5,6 +5,20 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 await build({
+  entryPoints: {
+    "stdio-thread": "apps/worker/src/stdio-thread.ts",
+    "stdio-io": "apps/worker/src/stdio-io.ts",
+    "native-stdio": "apps/worker/src/native-stdio.ts",
+    "codex-probe": "scripts/codex-probe.ts",
+  },
+  outdir: "apps/worker/dist",
+  outExtension: { ".js": ".cjs" },
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node24",
+});
+await build({
   entryPoints: ["apps/worker/src/index.ts"],
   outfile: "apps/worker/dist/index.cjs",
   bundle: true,
@@ -36,7 +50,11 @@ if (process.platform === "win32") {
     ],
     { stdio: "inherit" },
   );
-  for (const file of ["job_owner.node", "diagnostic_bootstrap.exe"])
+  for (const file of [
+    "job_owner.node",
+    "diagnostic_bootstrap.exe",
+    "stdio_owner.node",
+  ])
     copyFileSync(
       `apps/worker/native/build/Release/${file}`,
       `apps/worker/dist/${file}`,
