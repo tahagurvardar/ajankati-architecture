@@ -60,6 +60,15 @@ it("shows actual discovery and requires an explicit version click, with no conne
     expect(
       screen.getByText("CLI sınırlı yerel PATH aramasında bulunamadı."),
     ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CLI’leri keşfet" }));
+    await screen.findByRole("button", {
+      name: "Claude Code: --version çalıştırmayı onayla",
+    });
+    expect(screen.queryByText("2.1.296")).toBeNull();
+    expect(
+      screen.getByText("Bulundu · Doğrulanmadı · Etkin değil"),
+    ).toBeTruthy();
+    expect(launches).toBe(1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

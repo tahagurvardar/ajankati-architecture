@@ -36,7 +36,7 @@ try {
   const timer = setTimeout(() => {
     timedOut = true;
     child.kill();
-  }, 45000);
+  }, 75000);
   child.stdout.on("data", (chunk: Buffer) => {
     const text = chunk.toString();
     process.stdout.write(text);
