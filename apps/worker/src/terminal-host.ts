@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, release } from "node:os";
 import { join } from "node:path";
 import { spawn, type IPty } from "node-pty";
+import { createDiagnosticJob, type DiagnosticJob } from "./job-owner";
 import {
   terminalCommandSchema,
   type TerminalCommand,
@@ -35,25 +36,35 @@ export class OutputBuffer {
 type Session = {
   id: string;
   pty: IPty;
+  job: DiagnosticJob;
+  deadline?: ReturnType<typeof setTimeout>;
   directory: string;
   output: OutputBuffer;
   status: "running" | "exited";
+  rootExited: boolean;
   exitCode: number | null;
   exited: Promise<void>;
   disposables: { dispose(): void }[];
   terminating?: Promise<void>;
 };
 export class TerminalHost {
-  constructor(private readonly directoryRoot = tmpdir()) {}
+  constructor(
+    private readonly directoryRoot = tmpdir(),
+    private readonly createJob = createDiagnosticJob,
+    private readonly timeoutMs = 5 * 60 * 1000,
+  ) {}
   private session?: Session;
   private stopped = false;
   private closing = false;
+  private starting = false;
+  private failed = false;
   private inputWindow = 0;
   private inputBytes = 0;
 
   async execute(raw: TerminalCommand): Promise<TerminalState> {
     const command = terminalCommandSchema.parse(raw);
-    if (this.stopped || this.closing) throw new Error("Terminal kapatılıyor.");
+    if (this.stopped || this.closing || this.starting || this.failed)
+      throw new Error("Terminal kapatılıyor veya sahiplik doğrulanamadı.");
     if (command.method === "start") {
       if (process.platform !== "win32")
         throw new Error("ConPTY yalnız Windows'ta kullanılabilir.");
@@ -61,17 +72,33 @@ export class TerminalHost {
         throw new Error("Bu Windows sürümünde ConPTY desteklenmiyor.");
       if (this.session?.status === "running")
         throw new Error("Bir terminal zaten açık.");
+      this.starting = true;
+      if (this.session) {
+        try {
+          await this.terminate(this.session);
+        } catch (error) {
+          this.failed = true;
+          this.starting = false;
+          throw error;
+        }
+      }
+      if (this.stopped) {
+        this.starting = false;
+        throw new Error("Terminal kapatılıyor.");
+      }
       this.release();
       const directory = mkdtempSync(
         join(this.directoryRoot, "AjanKatı terminal "),
       );
+      let job: DiagnosticJob | undefined;
       try {
+        job = this.createJob();
         const env: Record<string, string> = {};
         for (const key of ["SystemRoot", "WINDIR", "TEMP", "TMP"])
           if (process.env[key]) env[key] = process.env[key]!;
         const pty = spawn(
-          join(__dirname, "../dist/terminal-node.exe"),
-          [join(__dirname, "safe-echo.cjs"), String(process.pid)],
+          join(__dirname, "../dist/diagnostic_bootstrap.exe"),
+          [job.name],
           {
             name: "xterm-256color",
             cols: command.payload.cols,
@@ -88,9 +115,11 @@ export class TerminalHost {
         const session: Session = {
           id: randomUUID(),
           pty,
+          job,
           directory,
           output: new OutputBuffer(),
           status: "running",
+          rootExited: false,
           exitCode: null,
           exited: new Promise<void>((resolve) => {
             exited = resolve;
@@ -100,18 +129,56 @@ export class TerminalHost {
         session.disposables.push(
           pty.onData((data) => session.output.append(data)),
           pty.onExit((event) => {
-            session.status = "exited";
+            session.rootExited = true;
             session.exitCode = event.exitCode;
             exited();
+            // Root exit is not proof of descendant exit. Always drain the job.
+            void this.terminate(session).catch(() => {
+              this.failed = true;
+            });
           }),
         );
         this.session = session;
         this.inputBytes = 0;
         this.inputWindow = Date.now();
+        const until = Date.now() + 10000;
+        while (!session.output.read(0).output.includes("READY Türkçe ConPTY")) {
+          if (this.stopped || session.rootExited || Date.now() > until)
+            throw new Error("Contained diagnostic launch failed.");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        if (this.stopped || session.terminating)
+          throw new Error("Terminal kapatılıyor.");
+        if (job.active() < 2)
+          throw new Error("Diagnostic job membership missing.");
+        session.deadline = setTimeout(() => {
+          void this.terminate(session).catch(() => {
+            this.failed = true;
+          });
+        }, this.timeoutMs);
         return this.state(session, 0);
       } catch (error) {
+        if (this.session) {
+          await this.terminate(this.session).catch(() => {
+            this.failed = true;
+          });
+        } else if (job) {
+          try {
+            job.terminate();
+          } catch {
+            this.failed = true;
+          } finally {
+            try {
+              job.close();
+            } catch {
+              this.failed = true;
+            }
+          }
+        }
         rmSync(directory, { recursive: true, force: true });
         throw error;
+      } finally {
+        this.starting = false;
       }
     }
     const session = this.session;
@@ -121,11 +188,18 @@ export class TerminalHost {
       return this.state(session, command.payload.cursor);
     if (command.method === "close") {
       this.closing = true;
-      await this.terminate(session);
-      this.closing = false;
+      try {
+        await this.terminate(session);
+      } catch (error) {
+        this.failed = true;
+        throw error;
+      } finally {
+        this.closing = false;
+      }
       return this.state(session, 0);
     }
     if (session.status !== "running") throw new Error("Terminal sonlandı.");
+    if (session.terminating) throw new Error("Terminal kapatılıyor.");
     switch (command.method) {
       case "input": {
         const now = Date.now();
@@ -158,11 +232,18 @@ export class TerminalHost {
     };
   }
   private async terminate(session: Session) {
-    session.terminating ??= this.finish(session);
+    session.terminating ??= this.finish(session).catch((error: unknown) => {
+      this.failed = true;
+      // KILL_ON_JOB_CLOSE is the last-resort containment path. Never turn an
+      // unverified cleanup into success or permit another process group.
+      session.job.close();
+      throw error;
+    });
     return session.terminating;
   }
   private async finish(session: Session) {
-    if (session.status === "running") {
+    clearTimeout(session.deadline);
+    if (!session.rootExited) {
       session.pty.write("\u0003");
       let grace: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
@@ -172,7 +253,14 @@ export class TerminalHost {
         }),
       ]);
       clearTimeout(grace);
-      if (session.status === "running") session.pty.kill();
+    }
+    // Job membership, not console PID enumeration, is the termination authority.
+    session.job.terminate();
+    const until = Date.now() + 3000;
+    while (session.job.active() !== 0) {
+      if (Date.now() > until)
+        throw new Error("Job cleanup could not be verified.");
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -188,6 +276,8 @@ export class TerminalHost {
     } finally {
       clearTimeout(timer);
     }
+    session.job.close();
+    session.status = "exited";
     rmSync(session.directory, {
       recursive: true,
       force: true,
@@ -197,6 +287,7 @@ export class TerminalHost {
   }
   private release() {
     if (!this.session) return;
+    clearTimeout(this.session.deadline);
     for (const disposable of this.session.disposables) disposable.dispose();
     rmSync(this.session.directory, {
       recursive: true,
