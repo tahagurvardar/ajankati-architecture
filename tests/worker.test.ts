@@ -17,6 +17,37 @@ afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
 });
 describe("built Node worker over real child IPC and SQLite", () => {
+  it("exposes agents v1 without changing the mock snapshot and rejects forged paths", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ajankati-agents-ipc-"));
+    dirs.push(dir);
+    const c = client(join(dir, "data.sqlite"));
+    await c.ready;
+    const before = await c.request({ method: "snapshot", payload: {} });
+    const rows = await c.agents({ method: "list", payload: {} });
+    expect(rows.integrations).toHaveLength(2);
+    expect(
+      rows.integrations.every((row) => !row.enabled && !row.verified),
+    ).toBe(true);
+    await expect(
+      c.agents({
+        method: "discover",
+        payload: { path: "C:\\evil.exe" },
+      } as unknown as Parameters<WorkerClient["agents"]>[0]),
+    ).rejects.toThrow();
+    await expect(
+      c.agents({
+        method: "verify",
+        payload: {
+          integrationId: "codex-cli",
+          approvalToken: "00000000-0000-4000-8000-000000000000",
+          approved: true,
+        },
+      }),
+    ).rejects.toThrow();
+    expect(await c.request({ method: "snapshot", payload: {} })).toEqual(
+      before,
+    );
+  });
   it.runIf(process.platform === "win32")(
     "owns ConPTY over versioned IPC and cleans up on desktop disconnect",
     async () => {

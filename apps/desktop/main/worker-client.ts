@@ -10,10 +10,14 @@ import {
   terminalResponseSchema,
   type TerminalCommand,
   type TerminalState,
+  agentRequestSchema,
+  agentResponseSchema,
+  type AgentCommand,
+  type AgentState,
 } from "@ajankati/contracts";
 
 type Pending = {
-  resolve: (snapshot: Snapshot | TerminalState) => void;
+  resolve: (snapshot: Snapshot | TerminalState | AgentState) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 };
@@ -69,9 +73,16 @@ export class WorkerClient {
         }
         const isTerminal =
           typeof input === "object" && input !== null && "protocol" in input;
-        const parsed = isTerminal
-          ? terminalResponseSchema.safeParse(input)
-          : responseSchema.safeParse(input);
+        const isAgents =
+          typeof input === "object" &&
+          input !== null &&
+          "protocol" in input &&
+          input.protocol === "agents";
+        const parsed = isAgents
+          ? agentResponseSchema.safeParse(input)
+          : isTerminal
+            ? terminalResponseSchema.safeParse(input)
+            : responseSchema.safeParse(input);
         if (!parsed.success) {
           this.failAll();
           this.child.kill();
@@ -104,30 +115,41 @@ export class WorkerClient {
     this.pending.clear();
   }
   async request(command: Command): Promise<Snapshot> {
-    return this.send(command, false) as Promise<Snapshot>;
+    return this.send(command, "tasks") as Promise<Snapshot>;
   }
   async terminal(command: TerminalCommand): Promise<TerminalState> {
-    return this.send(command, true) as Promise<TerminalState>;
+    return this.send(command, "terminal") as Promise<TerminalState>;
+  }
+  async agents(command: AgentCommand): Promise<AgentState> {
+    return this.send(command, "agents") as Promise<AgentState>;
   }
   private async send(
-    command: Command | TerminalCommand,
-    terminal: boolean,
-  ): Promise<Snapshot | TerminalState> {
+    command: Command | TerminalCommand | AgentCommand,
+    protocol: "tasks" | "terminal" | "agents",
+  ): Promise<Snapshot | TerminalState | AgentState> {
     await this.ready;
     if (this.pending.size >= 32)
       throw new Error("Bekleyen istek sınırı aşıldı.");
-    const request = terminal
-      ? terminalRequestSchema.parse({
-          protocol: "terminal",
-          version: 1,
-          requestId: randomUUID(),
-          command,
-        })
-      : parseRequest({
-          ...command,
-          version: 1,
-          requestId: randomUUID(),
-        });
+    const request =
+      protocol === "agents"
+        ? agentRequestSchema.parse({
+            protocol: "agents",
+            version: 1,
+            requestId: randomUUID(),
+            command,
+          })
+        : protocol === "terminal"
+          ? terminalRequestSchema.parse({
+              protocol: "terminal",
+              version: 1,
+              requestId: randomUUID(),
+              command,
+            })
+          : parseRequest({
+              ...command,
+              version: 1,
+              requestId: randomUUID(),
+            });
     if (!this.child.connected) throw new Error("İşçi bağlı değil.");
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

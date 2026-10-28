@@ -5,9 +5,11 @@ import { MockAgent } from "@ajankati/adapters";
 import { WorkerService } from "./service";
 import {
   terminalRequestSchema,
+  agentRequestSchema,
   type TerminalResponse,
 } from "@ajankati/contracts";
 import { TerminalHost } from "./terminal-host";
+import { AgentRegistry } from "./agent-registry";
 
 async function main(): Promise<void> {
   const filename = process.argv[2];
@@ -23,10 +25,12 @@ async function main(): Promise<void> {
     store.recover();
     const service = new WorkerService(store, new MockAgent());
     const terminal = new TerminalHost(dirname(filename));
+    const agents = new AgentRegistry();
     let stopping = false;
     const stop = async () => {
       if (stopping) return;
       stopping = true;
+      agents.stop();
       await terminal.stop();
       await service.stop();
       store?.close();
@@ -36,6 +40,39 @@ async function main(): Promise<void> {
     };
     process.on("message", (message: unknown) => {
       if (stopping) return;
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "protocol" in message &&
+        message.protocol === "agents"
+      ) {
+        const parsed = agentRequestSchema.safeParse(message);
+        if (!parsed.success) {
+          void stop();
+          return;
+        }
+        const envelope = {
+          protocol: "agents",
+          version: 1,
+          requestId: parsed.data.requestId,
+        };
+        void agents
+          .execute(parsed.data.command)
+          .then((data) => {
+            if (process.connected)
+              process.send?.({ ...envelope, ok: true, data });
+          })
+          .catch(() => {
+            if (process.connected)
+              process.send?.({
+                ...envelope,
+                ok: false,
+                error:
+                  "Keşif isteği reddedildi; onayı ve çalışan kontrolü inceleyin.",
+              });
+          });
+        return;
+      }
       if (
         typeof message === "object" &&
         message !== null &&

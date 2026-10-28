@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, TerminalApi } from "@ajankati/contracts";
+import type { DesktopApi, TerminalApi, AgentApi } from "@ajankati/contracts";
 const api: DesktopApi = {
   snapshot: () => ipcRenderer.invoke("ajankati:snapshot", {}),
   createProject: (name) =>
@@ -41,3 +41,14 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke("ajankati:terminal-close", { sessionId }),
 };
 contextBridge.exposeInMainWorld("ajankatiTerminal", Object.freeze(terminal));
+const agents: AgentApi = {
+  list: () => ipcRenderer.invoke("ajankati:agents-list", {}),
+  discover: () => ipcRenderer.invoke("ajankati:agents-discover", {}),
+  verify: (integrationId, approvalToken) =>
+    ipcRenderer.invoke("ajankati:agents-verify", {
+      integrationId,
+      approvalToken,
+      approved: true,
+    }),
+};
+contextBridge.exposeInMainWorld("ajankatiAgents", Object.freeze(agents));

@@ -22,6 +22,7 @@ for (const key of [
   "XDG_RUNTIME_DIR",
   "LANG",
   "AJANKATI_SMOKE_SCREENSHOT",
+  "AJANKATI_SMOKE_APPROVE_AGENT_VERSIONS",
 ])
   if (process.env[key]) env[key] = process.env[key];
 let passed = false;

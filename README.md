@@ -1,6 +1,16 @@
 # AjanKatı
 
-Faz 1B: yerel **mock** geliştirme merkezi ve gerçek Windows **ConPTY** test terminali. Claude Code/Codex, MCP, model API'si ve piksel ofis henüz bağlı değildir. Bu sürüm tam MVP veya güvenli otonomi ürünü değildir.
+Faz 1C-1: yerel **mock** geliştirme merkezi, gerçek Windows **ConPTY** test terminali ve **Claude Code / Codex CLI keşfi**. Yalnız açık onaylı sürüm kontrolleri vardır; gerçek ajan oturumları, MCP, model API'si ve piksel ofis etkin değildir. Bu sürüm tam MVP veya güvenli otonomi ürünü değildir.
+
+## Ajanlar — gerçek CLI keşfi
+
+Dashboard'daki **Ajanlar → CLI’leri keşfet** sınırlı yerel PATH üzerinde `claude.exe/.cmd` ve `codex.exe/.cmd` kimliklerini bulur; süreç başlatmaz. Her kart gerçek dosya yolunu, sürümü, doğrulama zamanını ve yetenek sınırlarını gösterir. **--version çalıştırmayı onayla** yalnız gösterilen kimlikte tek bir sürüm kontrolüne izin verir. Yeniden keşif önceki onay ve kanıtı sıfırlar. Bulundu / yalnız sürüm doğrulandı / etkin değil ayrı durumlardır.
+
+Worker sabit `--version`, `shell:false`, 4 saniye zaman aşımı ve toplam 4 KiB çıktı sınırı uygular. Zaman aşımında yalnız doğrudan çocuk için sonlandırma ister; genel süreç ağacı temizliği kanıtı değildir. Tam eşleşen Codex npm `.cmd` shim'i çalıştırılmadan paket içindeki native executable'a çözülür. Diğer `.cmd` düzenleri (Claude npm wrapper dahil), `.ps1`, göreli/UNC/device PATH girdileri desteklenmez; sessiz shell fallback yoktur. CLI kurma/güncelleme, auth/config okuma veya model isteği yapılmaz.
+
+`agents` protokol sürümü 1 yalnız `list`, `discover`, `verify` açar. Renderer yol/argv/cwd/env gönderemez. Tek kullanımlık onay keşfedilen kimliğe bağlıdır; çalıştırmadan önce kanonik yol ve dosya üstverisi tekrar denetlenir. Bu kontrol imza doğrulaması veya aynı kullanıcı saldırılarına karşı TOCTOU izolasyonu değildir. Süreç sahipliği, izin, iptal ve sandbox yetenekleri **bilinmiyor**, yönetilen görevler **desteklenmiyor**, etkinlik daima **kapalıdır**.
+
+Envanter yalnız worker belleğindedir; SQLite migration 1 ve mevcut kullanıcı verileri değişmez. Gerçek yerel kanıt ve manuel doğrulama komutları: [Faz 1C-1](docs/verification/PHASE-1C-1.md).
 
 ## Çalıştırma
 
@@ -73,7 +83,7 @@ pnpm audit --prod
 
 `pnpm verify` ilk dört kontrolü sırayla çalıştırır; `pnpm test` için önce build gereklidir (gerçek child IPC testi derlenmiş worker kullanır). `pnpm test:desktop` gerçek Electron ana süreç/preload/renderer/worker/SQLite hattını geçici DB ile sınar. Linux ekransız ortamda `pnpm test:desktop --ozone-platform=headless` veya Xvfb kullanılabilir. Sandbox kapatma bayrağı eklenmez. React DOM testi gerçek servis ve SQLite'a bağlıdır; sahte bir UI API başarısı üzerine kurulmamıştır.
 
-GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. ConPTY testleri yalnız Windows'ta çalışır; Linux'ta atlanır. Gerçek CLI, Windows DACL, Job Object veya sandbox yetenekleri bu testlerle kanıtlanmaz. Tarihsel [Faz 1A kaydı](docs/verification/PHASE-1A.md) ve `docs/01–12` korunur; yeni sonuçlar [Faz 1B kaydındadır](docs/verification/PHASE-1B.md).
+GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. ConPTY testleri yalnız Windows'ta çalışır; Linux'ta atlanır. Gerçek CLI oturum yönetimi, Windows DACL, Job Object veya sandbox yetenekleri bu testlerle kanıtlanmaz. Gerçek CLI sürüm deneyi yalnız açık yerel opt-in ile yapılır. Tarihsel [Faz 1A](docs/verification/PHASE-1A.md), [Faz 1B](docs/verification/PHASE-1B.md) ve `docs/01–12` korunur; yeni sonuçlar [Faz 1C-1 kaydındadır](docs/verification/PHASE-1C-1.md).
 
 ## Bilinen sınırlar ve güvenli kilit kurtarma
 
@@ -81,4 +91,4 @@ Worker DB yanında `.lock` dosyasıyla ikinci yazarı reddeder. Normal kapanış
 
 Kurtarmadan önce AjanKatı pencerelerini kapatın ve Görev Yöneticisi'nde ilgili Electron/Node worker süreçlerinin tamamen bittiğini doğrulayın. Hangi süreçlerin sahibi olduğundan emin değilseniz işlem yapmayın; yeniden başlatıp AjanKatı'yı henüz açmadan kontrol edin. İsterseniz **tüm** `AjanKati-Phase1A` klasörünün kopyasını alın (DB/WAL/SHM birlikte). Yalnız bu uygulamaya ait `foundation.sqlite.lock` dosyasını kaldırın; `.sqlite`, `-wal` veya `-shm` dosyalarını silmeyin. Sonra uygulamayı açın: eski `running` kayıtları `interrupted` olur, otomatik yeniden çalışmaz. Yeni deneme için tekrar **Hazırla** seçmek gerekir. Kalıcı hata varsa orijinal veriyi koruyun; boş DB ile değiştirmeyin.
 
-Sıradaki kilometre taşı: kontrollü Claude Code ve Codex adaptörleri. Gerçek onay/sandbox, executable kimliği ve süreç ağacı temizliği kanıtı olmadan yönetilen mod açılmayacak. Ruflo/MCP/skills/API ve ofis, mevcut domain/worker sözleşmeleri üzerine sonradan eklenebilir.
+Sıradaki en küçük kilometre taşı Faz 1C-2: kullanıcı onaylı tek bir gerçek Claude Code veya Codex CLI oturumu; süreç ağacı sahipliği ve iptal/çökme temizliği kanıtı ön koşuldur. Otomatik görev devri, arka plan otonomisi ve MCP açılmaz. Ruflo/MCP/skills/API ve ofis sonradan eklenebilir.
