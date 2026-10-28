@@ -18,6 +18,8 @@ Envanter yalnız worker belleğindedir; SQLite migration 1 ve mevcut kullanıcı
 
 Node.js **24.15+ (24.x)** ve **pnpm 11.25.0** gerekir. Kurulum yalnız bu deponun bağımlılıklarını indirir; global CLI ayarlarını veya credential dosyalarını okumaz. Electron ilk açılışta platform ikilisini indirir; internet erişimi gerekir.
 
+Faz 1C-2A Windows x64 kaynak build'i ayrıca mevcut **MSVC C++ Build Tools, Windows SDK ve Python** gerektirir. Depoya sabitlenen `node-gyp 13.1.0`, dar Node-API Job Object modülünü ve sabit native tanılama başlangıç programını derler. Araç zinciri otomatik/global kurulmaz; eksik araç veya native derleme hatasında güvensiz fallback yoktur. [Faz 1C-2A kanıtı ve sınırları](docs/verification/PHASE-1C-2A.md).
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
@@ -43,7 +45,7 @@ Dashboard altındaki **Test terminalini aç** yalnız paket içindeki `safe-echo
 
 Worker PTY'nin tek sahibidir. Terminal IPC'si ayrı `protocol: terminal, version: 1` zarfı kullanır. Renderer executable/argv/cwd/env gönderemez; session UUID ve ana frame denetimleri zorunludur. Çıktı worker'da en fazla 524.288 UTF-16 birimi, her okumada 8.192 birim; xterm geçmişi 5.000 satırdır. Giriş 4.096 birim/istek ve 16 KiB/s; worker istemcisinde en fazla 32 bekleyen istek vardır. Terminal metni SQLite'a yazılmaz; mevcut şema ve mock kabul akışı korunur.
 
-Normal kapatma önce ETX/Ctrl+C, süre dolarsa yalnız sahip olunan PTY üzerinde kapatma uygular. Test programı worker kaybını izler ve kendi sonlu ömrünü sınırlar. Bu mekanizma **genel Job Object veya OS sandbox değildir**; gerçek CLI'lerin süreç ağacı güvenliği kanıtlanmadan bu profil genişletilmemelidir. [Faz 1B tasarım ve Windows kanıtı](docs/verification/PHASE-1B.md).
+Normal kapatma önce ETX/Ctrl+C, süre dolarsa worker'ın sahip olduğu Job Object'i sonlandırır. `KILL_ON_JOB_CLOSE` worker çökmesinde devreye girer; artık PID watchdog'u yoktur. İşte aktif süreç sıfır olmadan temiz kapanış bildirilmez; belirsiz temizlik yeni oturumu engeller. `:tree` yalnız paketli sabit çocuk/torun tanılama programını açar; kullanıcı komutu/yolu çalıştırmaz. Güvenilir native başlangıç programı önce işe katılır; asıl tanılama hedefi `CREATE_SUSPENDED` + `JOB_LIST` ile oluşturulup üyeliği doğrulanmadan çalıştırılmaz. Bu **OS dosya/ağ sandbox'ı değildir**. Gerçek CLI yürütmesi Faz 1C-2B'ye kadar kapalıdır; sürüm kontrolleri bu job katmanına taşınmadı. [Tarihsel Faz 1B kaydı](docs/verification/PHASE-1B.md).
 
 ## Masaüstü akışı
 
@@ -85,7 +87,7 @@ pnpm audit --prod
 
 `pnpm verify` ilk dört kontrolü sırayla çalıştırır; `pnpm test` için önce build gereklidir (gerçek child IPC testi derlenmiş worker kullanır). `pnpm test:desktop` gerçek Electron ana süreç/preload/renderer/worker/SQLite hattını geçici DB ile sınar. Linux ekransız ortamda `pnpm test:desktop --ozone-platform=headless` veya Xvfb kullanılabilir. Sandbox kapatma bayrağı eklenmez. React DOM testi gerçek servis ve SQLite'a bağlıdır; sahte bir UI API başarısı üzerine kurulmamıştır.
 
-GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. ConPTY testleri yalnız Windows'ta çalışır; Linux'ta atlanır. Gerçek CLI oturum yönetimi, Windows DACL, Job Object veya sandbox yetenekleri bu testlerle kanıtlanmaz. Gerçek CLI sürüm deneyi yalnız açık yerel opt-in ile yapılır. Tarihsel [Faz 1A](docs/verification/PHASE-1A.md), [Faz 1B](docs/verification/PHASE-1B.md) ve `docs/01–12` korunur; yeni sonuçlar [Faz 1C-1 kaydındadır](docs/verification/PHASE-1C-1.md).
+GitHub Actions Linux/Windows'ta aynı kontrolleri ve Electron smoke akışını çalıştırır. ConPTY/Job Object testleri yalnız Windows'ta çalışır; Linux'ta atlanır. Sabit tanılama ağacı için Job Object kanıtı, gerçek CLI uyumluluğu, Windows DACL veya sandbox kanıtı değildir. Gerçek CLI sürüm deneyi yalnız açık yerel opt-in ile yapılır. Tarihsel [Faz 1A](docs/verification/PHASE-1A.md), [Faz 1B](docs/verification/PHASE-1B.md) ve `docs/01–12` korunur; süreç sahipliği sonuçları [Faz 1C-2A kaydındadır](docs/verification/PHASE-1C-2A.md).
 
 ## Bilinen sınırlar ve güvenli kilit kurtarma
 

@@ -1,18 +1,32 @@
-// Fixed diagnostic program. Never evaluates input, opens files, networks or children.
-const owner = Number(process.argv[2]);
-if (
-  !process.stdin.isTTY ||
-  !process.stdout.isTTY ||
-  !Number.isSafeInteger(owner)
-)
-  process.exit(2);
+// Fixed diagnostic program. Only :tree starts a fixed, harmless nested fixture.
+const { spawn } = require("node:child_process");
+const { join } = require("node:path");
+let tree;
+if (!process.stdin.isTTY || !process.stdout.isTTY) process.exit(2);
 process.stdin.setRawMode(true);
 process.stdin.setEncoding("utf8");
 process.stdout.write(`READY Türkçe ConPTY\r\nCWD:${process.cwd()}\r\n`);
 let line = "";
 let hold = false;
+let escapeState = 0;
+let escapeLength = 0;
 process.stdin.on("data", (data) => {
   for (const char of data) {
+    // ConPTY capability queries can be answered by xterm after READY. Consume
+    // bounded VT control replies across chunks so they cannot prefix user text.
+    if (char === "\u001b") {
+      escapeState = 1;
+      escapeLength = 0;
+      continue;
+    }
+    if (escapeState === 1) {
+      escapeState = char === "[" ? 2 : 0;
+      continue;
+    }
+    if (escapeState === 2) {
+      if (++escapeLength >= 64 || (char >= "@" && char <= "~")) escapeState = 0;
+      continue;
+    }
     if (char === "\u0003") {
       if (hold) continue;
       process.stdout.write("INTERRUPTED\r\n", () => process.exit(130));
@@ -41,6 +55,20 @@ process.stdin.on("data", (data) => {
         process.stdout._refreshSize();
         const [cols, rows] = process.stdout.getWindowSize();
         process.stdout.write(`SIZE:${cols}x${rows}\r\n`);
+      } else if (line === ":tree") {
+        if (!tree) {
+          tree = spawn(
+            process.execPath,
+            [join(__dirname, "diagnostic-tree.cjs"), "branch"],
+            {
+              shell: false,
+              windowsHide: true,
+              stdio: ["ignore", "pipe", "ignore"],
+            },
+          );
+          tree.stdout.on("data", (data) => process.stdout.write(data));
+          tree.on("error", () => process.stdout.write("TREE-FAILED\r\n"));
+        }
       } else if (line === ":flood")
         process.stdout.write("F".repeat(3 * 1024 * 1024) + "\r\nFLOOD-END\r\n");
       else process.stdout.write(`ECHO:${line}\r\n`);
@@ -49,12 +77,5 @@ process.stdin.on("data", (data) => {
     else if (char >= " " && line.length < 4096) line += char;
   }
 });
-// Diagnostic-only safety net for abrupt worker loss; not a general Job Object substitute.
-setInterval(() => {
-  try {
-    process.kill(owner, 0);
-  } catch {
-    process.exit(0);
-  }
-}, 500);
+// Worker-owned Job Object is the crash safety mechanism; no PID liveness check.
 setTimeout(() => process.exit(0), 5 * 60 * 1000);

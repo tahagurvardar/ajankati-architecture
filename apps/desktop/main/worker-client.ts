@@ -152,14 +152,17 @@ export class WorkerClient {
             });
     if (!this.child.connected) throw new Error("İşçi bağlı değil.");
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(request.requestId);
-        reject(
-          new Error(
-            "Yanıt alınamadı. Sonucu yenileyerek kontrol edin; işlem otomatik tekrarlanmadı.",
-          ),
-        );
-      }, 10000);
+      const timer = setTimeout(
+        () => {
+          this.pending.delete(request.requestId);
+          reject(
+            new Error(
+              "Yanıt alınamadı. Sonucu yenileyerek kontrol edin; işlem otomatik tekrarlanmadı.",
+            ),
+          );
+        },
+        protocol === "terminal" && command.method === "start" ? 20000 : 10000,
+      );
       this.pending.set(request.requestId, { resolve, reject, timer });
       this.child.send(request, (error) => {
         if (error) {

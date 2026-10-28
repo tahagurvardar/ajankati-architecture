@@ -222,6 +222,13 @@ it.runIf(process.platform === "win32")(
         .toContain(text);
     }
     await until("READY");
+    // xterm may answer a ConPTY device query after the fixed probe is ready.
+    // Split CSI reply across writes to exercise streaming input parsing.
+    await host.execute({
+      method: "input",
+      payload: { sessionId, data: "\u001b[?1;" },
+    });
+    await host.execute({ method: "input", payload: { sessionId, data: "2c" } });
     await host.execute({
       method: "input",
       payload: {

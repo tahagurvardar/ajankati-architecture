@@ -16,6 +16,7 @@ it.runIf(process.platform === "win32").each([false, true])(
     );
     let pid: number | undefined;
     let sessionId = "";
+    let nested: number[] = [];
     try {
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
@@ -53,6 +54,22 @@ it.runIf(process.platform === "win32").each([false, true])(
       });
       pid = await session;
       if (warm) {
+        await new Promise<void>((resolve, reject) => {
+          child.once("message", (raw) => {
+            const response = terminalResponseSchema.parse(raw);
+            if (response.ok) resolve();
+            else reject(new Error(response.error));
+          });
+          child.send({
+            protocol: "terminal",
+            version: 1,
+            requestId: "tree",
+            command: {
+              method: "input",
+              payload: { sessionId, data: ":tree\r" },
+            },
+          });
+        });
         await expect
           .poll(
             async () => {
@@ -64,8 +81,11 @@ it.runIf(process.platform === "win32").each([false, true])(
                 child.once("message", (input) => {
                   clearTimeout(timer);
                   const response = terminalResponseSchema.parse(input);
-                  if (response.ok) resolve(response.data.output);
-                  else reject(new Error(response.error));
+                  if (response.ok) {
+                    const match = /TREE:(\d+):(\d+)/.exec(response.data.output);
+                    if (match) nested = match.slice(1).map(Number);
+                    resolve(response.data.output);
+                  } else reject(new Error(response.error));
                 });
               });
               child.send({
@@ -78,13 +98,36 @@ it.runIf(process.platform === "win32").each([false, true])(
             },
             { timeout: 8000 },
           )
-          .toContain("READY");
+          .toMatch(/TREE:\d+:\d+/);
       }
       const exited = new Promise<void>((resolve) =>
         child.once("exit", () => resolve()),
       );
       child.kill();
       await exited;
+      for (const member of nested) {
+        await expect
+          .poll(
+            () => {
+              try {
+                process.kill(member, 0);
+                return false;
+              } catch {
+                return true;
+              }
+            },
+            { timeout: 8000 },
+          )
+          .toBe(true);
+      }
+      console.log(
+        JSON.stringify({
+          workerCrash: true,
+          bootstrapPid: pid,
+          nestedPids: nested,
+          cleaned: true,
+        }),
+      );
       await expect
         .poll(
           () => {
@@ -101,13 +144,6 @@ it.runIf(process.platform === "win32").each([false, true])(
       pid = undefined; // Never send another signal after the owned process is known gone.
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill();
-      if (pid) {
-        try {
-          process.kill(pid);
-        } catch {
-          /* already exited */
-        }
-      }
       rmSync(dir, {
         recursive: true,
         force: true,

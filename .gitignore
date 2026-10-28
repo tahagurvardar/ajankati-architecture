@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+apps/worker/native/build/
 *.sqlite*
 *.db*
 *.lock

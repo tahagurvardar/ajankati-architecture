@@ -189,7 +189,7 @@ app.on("browser-window-created", (_event, window) => {
         await window.webContents.executeJavaScript(`(async () => {
           document.querySelector('.terminal-panel').scrollIntoView();
           document.querySelector('.terminal-panel button').click();
-          for (let i=0;i<100;i++) {
+          for (let i=0;i<300;i++) {
             if (document.querySelector('.xterm-rows')?.textContent.includes('READY')) return;
             await new Promise(resolve=>setTimeout(resolve,50));
           }
@@ -214,7 +214,7 @@ app.on("browser-window-created", (_event, window) => {
             if (output.includes('ECHO:Merhaba') && /SIZE:\\d+x\\d+/.test(output)) return;
             await new Promise(resolve => setTimeout(resolve, 30));
           }
-          throw new Error('Merhaba or :size did not roundtrip');
+          throw new Error('Merhaba or :size did not roundtrip: ' + document.querySelector('.xterm-rows')?.textContent + ' / ' + document.querySelector('.terminal-panel [role=alert]')?.textContent);
         })()`);
         for (const char of "İıŞşĞğÜüÖöÇç") {
           window.webContents.sendInputEvent({ type: "char", keyCode: char });
@@ -239,11 +239,28 @@ app.on("browser-window-created", (_event, window) => {
         );
         await window.webContents.executeJavaScript(`(async () => {
           document.querySelector('.terminal-panel button').click();
-          for (let i=0;i<100;i++) {
+          for (let i=0;i<300;i++) {
             if (document.querySelector('.terminal-panel [role=status]').textContent.includes('Çalışıyor') && document.querySelector('.xterm-rows')?.textContent.includes('READY')) break;
             await new Promise(resolve=>setTimeout(resolve,50));
           }
           if (!document.querySelector('.terminal-panel [role=status]').textContent.includes('Çalışıyor') || !document.querySelector('.xterm-rows')?.textContent.includes('READY')) throw new Error('Second session did not start');
+          document.querySelector('.xterm-helper-textarea').focus();
+        })()`);
+        for (const char of ":tree\r") {
+          window.webContents.sendInputEvent({ type: "char", keyCode: char });
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        const treePids = await window.webContents
+          .executeJavaScript(`(async () => {
+          for (let i=0;i<100;i++) {
+            const match = /TREE:(\\d+):(\\d+)/.exec(document.querySelector('.xterm-rows')?.textContent);
+            if (match) return match.slice(1).map(Number);
+            await new Promise(resolve=>setTimeout(resolve,50));
+          }
+          throw new Error('Nested diagnostic tree did not reach Electron');
+        })()`);
+        for (const pid of treePids) process.kill(pid, 0);
+        await window.webContents.executeJavaScript(`(async () => {
           document.querySelectorAll('.terminal-panel button')[2].click();
           for (let i=0;i<100;i++) {
             if (document.querySelector('.terminal-panel [role=status]').textContent.includes('Sonlandı')) return;
@@ -251,8 +268,19 @@ app.on("browser-window-created", (_event, window) => {
           }
           throw new Error('Close button did not terminate session');
         })()`);
+        for (const pid of treePids) {
+          let alive = true;
+          try {
+            process.kill(pid, 0);
+          } catch {
+            alive = false;
+          }
+          if (alive)
+            throw new Error("Nested diagnostic survived Electron close");
+        }
         console.log(
-          "PASS session survives navigation; Merhaba, :size and second-session close",
+          "PASS session survives navigation; Merhaba, :size and second-session nested-tree cleanup " +
+            treePids.join(","),
         );
       }
       if (process.env.AJANKATI_SMOKE_SCREENSHOT) await navigate("agents");
