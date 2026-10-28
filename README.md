@@ -1,6 +1,8 @@
 # AjanKatı
 
-Faz 1C-1: yerel **mock** geliştirme merkezi, gerçek Windows **ConPTY** test terminali ve **Claude Code / Codex CLI keşfi**. Yalnız açık onaylı sürüm kontrolleri vardır; gerçek ajan oturumları, MCP, model API'si ve piksel ofis etkin değildir. Bu sürüm tam MVP veya güvenli otonomi ürünü değildir.
+UI Sprint 1: A+C tasarımlı Türkçe gezinme, statik piksel ofis önizlemesi ve gerçek yerel kayıtlara bağlı Panel Görünümü. **Projeler / Görevler** demo oluşturma, yürütme ve insan kabulünü; **Ajanlar** açık onaylı CLI sürüm kontrollerini; **Terminaller** Windows ConPTY güvenli yankı testini sunar. Gerçek ajan oturumları, MCP ve model API'si etkin değildir. Bu sürüm tam MVP veya güvenli otonomi ürünü değildir.
+
+Ofis illüstrasyonu canlı durum göstermez. Onaylar, Bilgi Kaynakları, Raporlar ve Entegrasyonlar açıkça işaretlenmiş gelecek ekranlarıdır. Terminal, menüde başka ekrana geçildiğinde oturumunu korur; kapatma ve beş dakika sınırı geçerlidir. [UI Sprint 1 doğrulama ve görsel kontrol adımları](docs/verification/UI-SPRINT-1.md).
 
 ## Ajanlar — gerçek CLI keşfi
 

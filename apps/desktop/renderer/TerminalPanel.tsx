@@ -13,6 +13,7 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const cursor = useRef(0);
+  const closing = useRef(false);
 
   useEffect(() => {
     const term = new Terminal({
@@ -56,7 +57,12 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
       if (writing) return;
       writing = true;
       try {
-        while (live && queuedInput && current.current === inputSession) {
+        while (
+          live &&
+          !closing.current &&
+          queuedInput &&
+          current.current === inputSession
+        ) {
           let length = Math.min(4096, queuedInput.length);
           if (/[\uD800-\uDBFF]/.test(queuedInput[length - 1])) length--;
           if (!length) break;
@@ -73,7 +79,7 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
     };
     const input = term.onData((data) => {
       const id = current.current;
-      if (!id) return;
+      if (!id || closing.current) return;
       if (inputSession !== id) {
         queuedInput = "";
         inputSession = id;
@@ -86,9 +92,12 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
       void flushInput();
     });
     const resize = () => {
+      // Navigation keeps this session mounted; never fit a hidden surface.
+      if (!container.current?.clientWidth || !container.current.clientHeight)
+        return;
       fit.fit();
       const id = current.current;
-      if (id && !resizing) {
+      if (id && !resizing && !closing.current) {
         resizing = true;
         void api
           .resize(
@@ -110,7 +119,7 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
     observer.observe(container.current!);
     const timer = setInterval(() => {
       const id = current.current;
-      if (!id || polling) return;
+      if (!id || polling || closing.current) return;
       polling = true;
       void api
         .read(id, cursor.current)
@@ -124,13 +133,19 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
           await new Promise<void>((resolve) =>
             term.write(state.output, resolve),
           );
-          if (state.status === "exited" && state.output.length === 0 && live) {
+          if (
+            state.status === "exited" &&
+            state.output.length === 0 &&
+            live &&
+            current.current === id
+          ) {
             current.current = null;
             setActive(false);
             setStatus(`Sonlandı · çıkış ${state.exitCode}`);
           }
         })
         .catch(() => {
+          if (!live || current.current !== id || closing.current) return;
           fail();
           current.current = null;
           if (live) {
@@ -182,11 +197,22 @@ export function TerminalPanel({ api }: { api: TerminalApi }) {
     const id = current.current;
     if (!id) return;
     setBusy(true);
+    if (action === "close") closing.current = true;
     try {
-      await api[action](id);
+      const state = await api[action](id);
+      if (
+        action === "close" &&
+        current.current === id &&
+        state.status === "exited"
+      ) {
+        current.current = null;
+        setActive(false);
+        setStatus(`Sonlandı · çıkış ${state.exitCode}`);
+      }
     } catch {
       setError("Terminal kontrolü başarısız.");
     } finally {
+      closing.current = false;
       setBusy(false);
     }
   }

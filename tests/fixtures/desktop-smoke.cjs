@@ -1,7 +1,7 @@
 // Runs the real production entry, preload, renderer, Node worker and SQLite.
 // Never disable Electron's sandbox in this test.
 const { app } = require("electron");
-const { writeFileSync } = require("node:fs");
+const { writeFileSync, mkdirSync } = require("node:fs");
 const { resolve } = require("node:path");
 const data = process.env.AJANKATI_SMOKE_DATA;
 if (!data)
@@ -16,7 +16,7 @@ let probingCsp = false;
 const timer = setTimeout(() => {
   console.error("Desktop smoke timed out");
   app.exit(1);
-}, 35000);
+}, 60000);
 app.on("will-quit", () => {
   clearTimeout(timer);
   if (!passed) app.exit(1);
@@ -32,6 +32,14 @@ app.on("browser-window-created", (_event, window) => {
   window.webContents.on("did-finish-load", async () => {
     try {
       console.log("SMOKE renderer loaded");
+      window.show();
+      window.focus();
+      const navigate = async (route) => {
+        await window.webContents.executeJavaScript(
+          `(() => { document.querySelector('[data-route="${route}"]').click(); return true; })()`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      };
       const prefs = window.webContents.getLastWebPreferences();
       if (!prefs.sandbox || !prefs.contextIsolation || prefs.nodeIntegration)
         throw new Error("Unsafe renderer preferences");
@@ -55,6 +63,70 @@ app.on("browser-window-created", (_event, window) => {
         if (state.tasks[0].status !== 'succeeded') throw new Error('Acceptance failed');
       })()`);
       console.log("SMOKE mock acceptance completed");
+      await navigate("overview");
+      await window.webContents.executeJavaScript(`(async () => {
+        document.querySelector('.page-heading button').click();
+        const image = document.querySelector('.office-scene img');
+        await image.decode();
+        if (image.naturalWidth < 1000 || !image.src.startsWith('file:')) throw new Error('Scene missing or not local');
+        if (!document.querySelector('figcaption').textContent.includes('CANLI OFİS DEĞİL')) throw new Error('Missing static preview notice');
+        document.querySelectorAll('.view-controls button')[1].click();
+        await new Promise(resolve => setTimeout(resolve,100));
+        if (!document.querySelector('.panel-view').textContent.includes('Kabul edildi: 1')) throw new Error('Panel is not backed by snapshot');
+        document.querySelectorAll('.view-controls button')[0].click();
+      })()`);
+      const screenshots = resolve("apps/desktop/dist/ui-sprint-1");
+      mkdirSync(screenshots, { recursive: true });
+      await navigate("projects");
+      for (const [width, height, zoom] of [
+        [1366, 768, 1],
+        [1440, 900, 1],
+        [1920, 1080, 1],
+        [1366, 768, 1.25],
+        [820, 620, 1.25],
+      ]) {
+        window.setContentSize(width, height);
+        window.webContents.setZoomFactor(zoom);
+        for (const route of [
+          "overview",
+          "projects",
+          "agents",
+          "approvals",
+          "knowledge",
+          "reports",
+          "terminal",
+          "integrations",
+        ]) {
+          await navigate(route);
+          const layout = await window.webContents.executeJavaScript(`({
+            overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            focused: document.activeElement === document.querySelector('h1'),
+            current: document.querySelector('[aria-current="page"]').dataset.route,
+          })`);
+          if (layout.overflow || !layout.focused || layout.current !== route)
+            throw new Error(
+              "Layout/focus failure: " +
+                JSON.stringify({ width, height, zoom, route, layout }),
+            );
+          if (
+            zoom === 1 &&
+            ["overview", "projects", "terminal"].includes(route)
+          ) {
+            await window.webContents.executeJavaScript("window.scrollTo(0,0)");
+            writeFileSync(
+              resolve(screenshots, `${route}-${width}x${height}.png`),
+              (await window.webContents.capturePage()).toPNG(),
+            );
+          }
+        }
+        console.log(`SMOKE layout ${width}x${height} zoom ${zoom}`);
+      }
+      window.setContentSize(1366, 768);
+      window.webContents.setZoomFactor(1);
+      console.log(
+        "PASS local scene, Office/Panel, all routes, focus and overflow at 3 desktop sizes + 125% zoom + narrow window",
+      );
+      await navigate("agents");
       await window.webContents.executeJavaScript(`(async () => {
         if (!document.querySelector('.agents-panel')?.textContent.includes('Ajanlar')) throw new Error('Missing agents view');
         const state = await window.ajankatiAgents.discover();
@@ -113,6 +185,7 @@ app.on("browser-window-created", (_event, window) => {
       if (process.platform === "win32") {
         window.show();
         window.focus();
+        await navigate("terminal");
         await window.webContents.executeJavaScript(`(async () => {
           document.querySelector('.terminal-panel').scrollIntoView();
           document.querySelector('.terminal-panel button').click();
@@ -123,6 +196,26 @@ app.on("browser-window-created", (_event, window) => {
           throw new Error('ConPTY output did not reach xterm: ' + document.querySelector('.terminal-panel [role=status]').textContent + ' ' + document.querySelector('.xterm-rows')?.textContent);
         })()`);
         console.log("SMOKE terminal READY rendered");
+        await navigate("overview");
+        await navigate("terminal");
+        await window.webContents.executeJavaScript(`(() => {
+          if (!document.querySelector('.xterm-rows').textContent.includes('READY')) throw new Error('Navigation lost terminal session');
+          document.querySelector('.xterm-helper-textarea').focus();
+        })()`);
+        for (const line of ["Merhaba", ":size"]) {
+          for (const char of line)
+            window.webContents.sendInputEvent({ type: "char", keyCode: char });
+          window.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+        await window.webContents.executeJavaScript(`(async () => {
+          for (let i=0; i<100; i++) {
+            const output = document.querySelector('.xterm-rows').textContent;
+            if (output.includes('ECHO:Merhaba') && /SIZE:\\d+x\\d+/.test(output)) return;
+            await new Promise(resolve => setTimeout(resolve, 30));
+          }
+          throw new Error('Merhaba or :size did not roundtrip');
+        })()`);
         for (const char of "İıŞşĞğÜüÖöÇç") {
           window.webContents.sendInputEvent({ type: "char", keyCode: char });
           await new Promise((resolve) => setTimeout(resolve, 50));
@@ -144,7 +237,25 @@ app.on("browser-window-created", (_event, window) => {
         console.log(
           "PASS Windows ConPTY → xterm Unicode keyboard roundtrip → Ctrl+C → exit",
         );
+        await window.webContents.executeJavaScript(`(async () => {
+          document.querySelector('.terminal-panel button').click();
+          for (let i=0;i<100;i++) {
+            if (document.querySelector('.terminal-panel [role=status]').textContent.includes('Çalışıyor') && document.querySelector('.xterm-rows')?.textContent.includes('READY')) break;
+            await new Promise(resolve=>setTimeout(resolve,50));
+          }
+          if (!document.querySelector('.terminal-panel [role=status]').textContent.includes('Çalışıyor') || !document.querySelector('.xterm-rows')?.textContent.includes('READY')) throw new Error('Second session did not start');
+          document.querySelectorAll('.terminal-panel button')[2].click();
+          for (let i=0;i<100;i++) {
+            if (document.querySelector('.terminal-panel [role=status]').textContent.includes('Sonlandı')) return;
+            await new Promise(resolve=>setTimeout(resolve,50));
+          }
+          throw new Error('Close button did not terminate session');
+        })()`);
+        console.log(
+          "PASS session survives navigation; Merhaba, :size and second-session close",
+        );
       }
+      if (process.env.AJANKATI_SMOKE_SCREENSHOT) await navigate("agents");
       if (process.env.AJANKATI_SMOKE_SCREENSHOT)
         await window.webContents.executeJavaScript(
           "new Promise(resolve => { document.querySelector('.agents-panel').scrollIntoView({behavior:'instant',block:'start'}); setTimeout(resolve,150); })",
