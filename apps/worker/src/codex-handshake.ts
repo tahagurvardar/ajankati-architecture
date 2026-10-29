@@ -59,9 +59,84 @@ const notification = z.discriminatedUnion("method", [
     .strict(),
 ]);
 
+// Reporting allowlist, deliberately narrower than the full protocol. Never echo
+// an unrecognized method, Zod issue message/path, or provider-controlled key.
+const diagnosticMethods = [
+  "warning",
+  "configWarning",
+  "deprecationNotice",
+] as const;
+type DiagnosticMethod = (typeof diagnosticMethods)[number] | "unknown";
+export interface HandshakeDiagnostic {
+  category:
+    | "unexpected_notification"
+    | "schema_mismatch"
+    | "duplicate_response"
+    | "unexpected_response"
+    | "unexpected_request"
+    | "startup_notification";
+  phase: "before_response" | "after_response";
+  frame: number;
+  method?: DiagnosticMethod;
+  field?:
+    | "envelope"
+    | "id"
+    | "result"
+    | "userAgent"
+    | "method"
+    | "params"
+    | "message"
+    | "summary"
+    | "details"
+    | "path"
+    | "range"
+    | "threadId";
+  issue?: "missing" | "invalid" | "unexpected_field";
+}
+function diagnosticMethod(value: unknown): DiagnosticMethod {
+  return diagnosticMethods.find((method) => method === value) ?? "unknown";
+}
+function schemaDiagnostic(
+  error: z.ZodError,
+  value: unknown,
+): Pick<HandshakeDiagnostic, "field" | "issue"> {
+  const issue = error.issues[0];
+  if (issue.code === "unrecognized_keys")
+    return { field: "envelope", issue: "unexpected_field" };
+  const fields = [
+    "id",
+    "result",
+    "userAgent",
+    "method",
+    "params",
+    "message",
+    "summary",
+    "details",
+    "path",
+    "range",
+    "threadId",
+  ] as const;
+  // Nested range errors describe the expected range, never a dynamic key.
+  const field = issue.path.includes("range")
+    ? "range"
+    : (fields.find((field) => field === issue.path.at(-1)) ?? "envelope");
+  let current: unknown = value;
+  let missing = false;
+  for (const key of issue.path) {
+    if (!current || typeof current !== "object") break;
+    if (!Object.hasOwn(current, key)) {
+      missing = true;
+      break;
+    }
+    current = (current as Record<PropertyKey, unknown>)[key];
+  }
+  return { field, issue: missing ? "missing" : "invalid" };
+}
+
 /** Non-inference protocol path. No thread, turn, model, auth or approval requests. */
 export async function initializeOnly(
   transport: CodexTransport & { drain(): Promise<void>; error?: StdioError },
+  report?: (diagnostic: HandshakeDiagnostic) => void,
 ): Promise<{ initialized: true; cleaned: true }> {
   let buffer = Buffer.alloc(0);
   let received = false;
@@ -71,6 +146,13 @@ export async function initializeOnly(
   let failure: Error | undefined;
   let unsubscribe: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const diagnose = (detail: Omit<HandshakeDiagnostic, "phase" | "frame">) => {
+    report?.({
+      ...detail,
+      phase: received ? "after_response" : "before_response",
+      frame: frames,
+    });
+  };
   try {
     await new Promise<void>((resolve, reject) => {
       const fail = (code: string) => {
@@ -102,11 +184,44 @@ export async function initializeOnly(
               return fail("INVALID_JSON");
             }
             if (value && typeof value === "object" && "method" in value) {
-              if ("id" in value) return fail("UNEXPECTED_REQUEST");
-              if (!notification.safeParse(value).success)
+              const method = diagnosticMethod(value.method);
+              if ("id" in value) {
+                diagnose({ category: "unexpected_request", method });
+                return fail("UNEXPECTED_REQUEST");
+              }
+              const parsed = notification.safeParse(value);
+              if (!parsed.success) {
+                if (typeof value.method !== "string")
+                  diagnose({
+                    category: "schema_mismatch",
+                    method,
+                    field: "method",
+                    issue: "invalid",
+                  });
+                else if (method === "unknown")
+                  diagnose({ category: "unexpected_notification", method });
+                else
+                  diagnose({
+                    category: "schema_mismatch",
+                    method,
+                    ...schemaDiagnostic(parsed.error, value),
+                  });
                 return fail("UNEXPECTED_MESSAGE");
+              }
+              diagnose({ category: "startup_notification", method });
             } else {
-              if (received) return fail("UNEXPECTED_MESSAGE");
+              if (received) {
+                diagnose({
+                  category:
+                    value &&
+                    typeof value === "object" &&
+                    "id" in value &&
+                    value.id === 1
+                      ? "duplicate_response"
+                      : "unexpected_response",
+                });
+                return fail("UNEXPECTED_MESSAGE");
+              }
               if (
                 value &&
                 typeof value === "object" &&
@@ -115,8 +230,14 @@ export async function initializeOnly(
                 "error" in value
               )
                 return fail("INITIALIZE_REJECTED");
-              if (!response.safeParse(value).success)
+              const parsed = response.safeParse(value);
+              if (!parsed.success) {
+                diagnose({
+                  category: "schema_mismatch",
+                  ...schemaDiagnostic(parsed.error, value),
+                });
                 return fail("INVALID_RESPONSE");
+              }
               received = true;
             }
           }
