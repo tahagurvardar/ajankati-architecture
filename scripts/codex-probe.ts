@@ -16,7 +16,10 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Store } from "../packages/storage/src/index";
 import type { SessionUsage } from "../packages/contracts/src/index";
-import { initializeOnly } from "../apps/worker/src/codex-handshake";
+import {
+  initializeOnly,
+  type HandshakeDiagnostic,
+} from "../apps/worker/src/codex-handshake";
 import {
   createNativeProbeTransport,
   StdioError,
@@ -154,8 +157,11 @@ async function main(): Promise<void> {
     const transport = createNativeProbeTransport(plan.profile);
     let initialized = false;
     let failureCode: string | undefined;
+    const protocolDiagnostics: HandshakeDiagnostic[] = [];
     try {
-      await initializeOnly(transport);
+      await initializeOnly(transport, (event) =>
+        protocolDiagnostics.push(event),
+      );
       initialized = true;
     } catch (error) {
       failureCode = error instanceof StdioError ? error.code : "PROBE_FAILED";
@@ -184,6 +190,7 @@ async function main(): Promise<void> {
           stderrBytes: transport.stderrBytes,
           stdoutBytes: transport.stdoutBytes,
           outputDrained: transport.outputDrained,
+          protocolDiagnostics,
           durationMs: row.durationMs,
           tokens: "UNKNOWN",
           cost: "UNKNOWN",

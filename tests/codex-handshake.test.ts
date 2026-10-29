@@ -1,6 +1,7 @@
 import { it, expect, vi } from "vitest";
 import type { CodexTransport } from "../apps/worker/src/codex-session";
 import { initializeOnly } from "../apps/worker/src/codex-handshake";
+import type { HandshakeDiagnostic } from "../apps/worker/src/codex-handshake";
 
 function fixture(response: Buffer | Buffer[], cleaned = true, exit = false) {
   const sent: string[] = [];
@@ -181,4 +182,172 @@ it("rejects a server request arriving during cleanup after initialized was writt
     return true;
   };
   await expect(initializeOnly(transport)).rejects.toThrow("UNEXPECTED_REQUEST");
+});
+
+// Entirely synthetic input: never capture provider output as a fixture.
+it.each([
+  [
+    { method: "private-unknown", params: { secret: "private-body" } },
+    "unexpected_notification",
+    "unknown",
+    undefined,
+    undefined,
+  ],
+  [
+    { method: "warning", params: {} },
+    "schema_mismatch",
+    "warning",
+    "message",
+    "missing",
+  ],
+  [
+    { method: "warning", params: { message: 42 } },
+    "schema_mismatch",
+    "warning",
+    "message",
+    "invalid",
+  ],
+  [
+    {
+      method: "warning",
+      params: { message: "private-body", "private-key": true },
+    },
+    "schema_mismatch",
+    "warning",
+    "envelope",
+    "unexpected_field",
+  ],
+  [
+    {
+      method: "warning",
+      params: { message: "private-body", threadId: "private-thread" },
+    },
+    "schema_mismatch",
+    "warning",
+    "threadId",
+    "invalid",
+  ],
+  [
+    {
+      method: "configWarning",
+      params: {
+        summary: "private-body",
+        range: { start: { line: -1, column: 0 }, end: { line: 1, column: 0 } },
+      },
+    },
+    "schema_mismatch",
+    "configWarning",
+    "range",
+    "invalid",
+  ],
+  [
+    { id: 2, method: "item/tool/call", params: { secret: "private-body" } },
+    "unexpected_request",
+    "unknown",
+    undefined,
+    undefined,
+  ],
+  [
+    { id: 2, method: "execCommandApproval", params: {} },
+    "unexpected_request",
+    "unknown",
+    undefined,
+    undefined,
+  ],
+  [{ id: 1, result: {} }, "schema_mismatch", undefined, "userAgent", "missing"],
+  [{ id: 1 }, "schema_mismatch", undefined, "result", "missing"],
+  [
+    { result: { userAgent: "private-body" } },
+    "schema_mismatch",
+    undefined,
+    "id",
+    "missing",
+  ],
+  [
+    { method: 42, params: {} },
+    "schema_mismatch",
+    "unknown",
+    "method",
+    "invalid",
+  ],
+] as const)(
+  "emits only closed diagnostic vocabulary for rejected input %#",
+  async (value, category, method, field, issue) => {
+    const diagnostics: HandshakeDiagnostic[] = [];
+    const { transport, sent } = fixture(
+      Buffer.from(JSON.stringify(value) + "\n"),
+    );
+    await expect(
+      initializeOnly(transport, (event) => diagnostics.push(event)),
+    ).rejects.toThrow();
+    expect(diagnostics).toEqual([
+      { category, method, field, issue, phase: "before_response", frame: 1 },
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain("private-");
+    expect(sent).toEqual(["initialize"]);
+  },
+);
+
+it.each([
+  { method: "warning", params: { message: "private-body", threadId: null } },
+  {
+    method: "configWarning",
+    params: {
+      summary: "private-body",
+      path: "private-path",
+      details: null,
+      range: null,
+    },
+  },
+  {
+    method: "deprecationNotice",
+    params: { summary: "private-body", details: "private-details" },
+  },
+])(
+  "reports legitimate $method before and during cleanup without content",
+  async (value) => {
+    const diagnostics: HandshakeDiagnostic[] = [];
+    const line = JSON.stringify(value) + "\n";
+    const { transport, emitData, emitExit } = fixture(
+      Buffer.from(line + reply),
+    );
+    transport.terminate = async () => {
+      emitData(Buffer.from(line));
+      emitExit();
+      return true;
+    };
+    await expect(
+      initializeOnly(transport, (event) => diagnostics.push(event)),
+    ).resolves.toEqual({ initialized: true, cleaned: true });
+    expect(diagnostics).toEqual([
+      {
+        category: "startup_notification",
+        method: value.method,
+        phase: "before_response",
+        frame: 1,
+      },
+      {
+        category: "startup_notification",
+        method: value.method,
+        phase: "after_response",
+        frame: 3,
+      },
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain("private-");
+  },
+);
+
+it.each([
+  [reply, "duplicate_response"],
+  ['{"id":2,"result":{}}\n', "unexpected_response"],
+  ["null\n", "unexpected_response"],
+] as const)("distinguishes second response %#", async (line, category) => {
+  const diagnostics: HandshakeDiagnostic[] = [];
+  const { transport } = fixture(Buffer.from(reply + line));
+  await expect(
+    initializeOnly(transport, (event) => diagnostics.push(event)),
+  ).rejects.toThrow("UNEXPECTED_MESSAGE");
+  expect(diagnostics).toEqual([
+    { category, phase: "after_response", frame: 2 },
+  ]);
 });
