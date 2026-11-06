@@ -9,6 +9,7 @@ import {
   copyFileSync,
   linkSync,
   realpathSync,
+  renameSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -101,6 +102,55 @@ describe.runIf(process.platform === "win32")("offline managed preflight", () => 
     expect(status.gates.nativePathBoundary).toBe("unknown");
     expect(() => host.authorizeExecution(plan.planId)).toThrow();
     expect(() => host.decide(decision)).toThrow();
+  });
+
+  it("binds worker-generated native identity into the strict digest", async () => {
+    const { host, store, plan, task, workspace, executable } = await setup();
+    expect(plan.workspace.native?.finalPath).toBe(workspace);
+    expect(plan.executable.native?.fileId).toMatch(/^[a-f0-9]{32}$/);
+    expect(Object.isFrozen(plan.workspace.native)).toBe(true);
+    expect(() =>
+      host.prepare({
+        taskId: task.id,
+        workspace,
+        executable,
+        scope: ["README.md"],
+        native: plan.workspace.native,
+      }),
+    ).toThrow();
+    expect(() =>
+      store.managed.save({
+        ...plan,
+        workspace: {
+          ...plan.workspace,
+          native: { ...plan.workspace.native, fileId: "0".repeat(32) },
+        },
+      }),
+    ).toThrow();
+    expect(
+      contracts.managedPlanSchema.safeParse({
+        ...plan,
+        workspace: {
+          ...plan.workspace,
+          native: { ...plan.workspace.native, verified: true },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects same-content file replacement between plan and review", async () => {
+    const { host, plan, workspace, executable } = await setup();
+    const file = join(workspace, "README.md");
+    renameSync(file, file + ".old");
+    writeFileSync(file, "approved content");
+    renameSync(executable, executable + ".old");
+    writeFileSync(executable, "offline fixture; never executable");
+    const status = host.inspect(plan.planId);
+    expect(status.gates.workspace).toBe("failed");
+    expect(status.gates.executable).toBe("failed");
+    expect(status.gates.nativePathBoundary).toBe("unknown");
+    expect(status.gates.humanApprovalChannel).toBe("unknown");
+    expect(status.executionAllowed).toBe(false);
   });
 
   it("rejects a changed executable, workspace identity, task revision and injected evidence", async () => {
