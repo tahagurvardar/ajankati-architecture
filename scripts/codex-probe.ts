@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { Store } from "../packages/storage/src/index";
 import type { SessionUsage } from "../packages/contracts/src/index";
 import {
@@ -63,20 +63,40 @@ async function main(): Promise<void> {
   if (process.platform !== "win32" || process.arch !== "x64")
     throw new Error("WINDOWS_X64_REQUIRED");
   if (
-    process.argv.length !== 3 ||
-    !["--prepare", "--approve-initialize-only"].includes(process.argv[2])
+    !(
+      (process.argv.length === 3 &&
+        ["--prepare", "--approve-initialize-only"].includes(process.argv[2])) ||
+      (process.argv.length === 5 &&
+        process.argv[2] === "--prepare" &&
+        process.argv[3] === "--source-executable")
+    )
   )
     throw new Error(
-      "Use --prepare to review, then --approve-initialize-only after explicit human approval. No inference is supported.",
+      "Use --prepare [--source-executable <absolute-local-exe-path>] to review, then --approve-initialize-only after explicit human approval. No inference is supported.",
     );
   ancestors();
   const planPath = join(root, "codex-probe-plan.json");
   if (process.argv[2] === "--prepare") {
     if (!absent(planPath)) throw new Error("PROBE_PLAN_ALREADY_EXISTS");
-    const source = join(
-      homedir(),
-      "AppData/Roaming/npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
-    );
+    const source =
+      process.argv[4] ??
+      join(
+        homedir(),
+        "AppData/Roaming/npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+      );
+    if (process.argv[4] !== undefined) {
+      // Require a drive-qualified local file, not a drive-relative/root-relative
+      // path, network/device path, shell wrapper, directory or symbolic link.
+      if (
+        !isAbsolute(source) ||
+        !/^[a-z]:[\\/]/i.test(source) ||
+        extname(source).toLowerCase() !== ".exe" ||
+        absent(source) ||
+        !lstatSync(source).isFile() ||
+        lstatSync(source).isSymbolicLink()
+      )
+        throw new Error("INVALID_SOURCE_EXECUTABLE");
+    }
     if ((await digest(source)) !== hash) throw new Error("IDENTITY_REJECTED");
     const image = join(root, "codex.exe");
     if (absent(image)) copyFileSync(source, image, constants.COPYFILE_EXCL);
@@ -209,6 +229,7 @@ void main().catch((error: unknown) => {
     "ANCESTOR_CONFIG_REVIEW_REQUIRED",
     "PROBE_PLAN_ALREADY_EXISTS",
     "IDENTITY_REJECTED",
+    "INVALID_SOURCE_EXECUTABLE",
     "INVALID_PROBE_PLAN",
     "PROFILE_CHANGED",
   ]);
