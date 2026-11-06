@@ -82,7 +82,7 @@ export function Overview({
   }
   function closeAgent(restoreFocus = true) {
     setOpen(null);
-    if (restoreFocus) opener.current?.focus();
+    if (restoreFocus) opener.current?.focus({ preventScroll: true });
     opener.current = null;
   }
   const recordFor = (role: OfficeRole) =>
@@ -172,8 +172,9 @@ export function Overview({
             <figcaption>
               <strong>TASARIM ÖNİZLEMESİ — CANLI OFİS DEĞİL</strong>
               <span>
-                Karakterler statik görselin parçasıdır. Daireler yalnız rol ve
-                yerel CLI envanteri ayrıntısı açar; ajan çalıştırmaz.
+                Resimdeki etiketli karakterler ve Kat seçici statik görselin
+                parçasıdır; tıklanmaz. Yalnız 4 işaretli nokta (Claude, Codex,
+                Araştırma, Test/QA) ayrıntı açar; ajan çalıştırmaz.
               </span>
             </figcaption>
             <div className="scene-stage">
@@ -188,10 +189,17 @@ export function Overview({
                   data-agent={role.key}
                   aria-haspopup="dialog"
                   aria-label={`${role.name} ayrıntılarını aç`}
-                  title={role.name}
                   onClick={(event) => openAgent(role, event.currentTarget)}
                 >
                   <span aria-hidden="true">{role.glyph}</span>
+                  <span className="hotspot-label" aria-hidden="true">
+                    {role.name}
+                    <small>
+                      {role.integrationId
+                        ? "Yerel CLI envanteri"
+                        : "Tasarım rolü · bağlı ajan yok"}
+                    </small>
+                  </span>
                 </button>
               ))}
             </div>
