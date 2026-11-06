@@ -4,6 +4,7 @@ import {
   mkdirSync,
   writeFileSync,
   rmSync,
+  realpathSync,
   renameSync,
   symlinkSync,
 } from "node:fs";
@@ -19,8 +20,10 @@ afterEach(() => {
   for (const dir of dirs.splice(0))
     rmSync(dir, { recursive: true, force: true });
 });
+// Hosted Windows CI can expose TEMP via an alias rejected by the native
+// path boundary. Use its canonical on-disk location; do not relax production checks.
 async function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), "human-cli-İ-"));
+  const dir = mkdtempSync(join(realpathSync.native(tmpdir()), "human-cli-İ-"));
   dirs.push(dir);
   const workspace = join(dir, "workspace");
   mkdirSync(workspace);
