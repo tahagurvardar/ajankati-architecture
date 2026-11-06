@@ -54,10 +54,12 @@ it("migrates v1 with a consistent backup and preserves tasks; backup restores in
   const before = store.snapshot();
   store.close();
   const old = new DatabaseSync(file);
-  old.exec("DROP TABLE IF EXISTS sessions; PRAGMA user_version=1");
+  old.exec(
+    "DROP TABLE managed_ownership; DROP TABLE managed_decisions; DROP TABLE managed_plans; DROP TABLE IF EXISTS sessions; PRAGMA user_version=1",
+  );
   old.close();
   const migrated = open(file);
-  expect(migrated.schemaVersion()).toBe(2);
+  expect(migrated.schemaVersion()).toBe(3);
   expect(migrated.snapshot()).toEqual(before);
   const backups = readdirSync(dir).filter((f) => f.includes("backup-v1-"));
   expect(backups).toHaveLength(1);
