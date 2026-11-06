@@ -8,6 +8,7 @@ import {
   readdirSync,
   copyFileSync,
   linkSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,7 +50,9 @@ describe.runIf(process.platform === "win32")("offline managed preflight", () => 
     const { ManagedPreflight } = await import(
       "../apps/worker/src/managed-preflight"
     );
-    const dir = mkdtempSync(join(tmpdir(), "ak-preflight-"));
+    // GitHub Windows runners may expose an aliased TEMP path. Build fixtures
+    // under its resolved on-disk location without weakening production checks.
+    const dir = mkdtempSync(join(realpathSync.native(tmpdir()), "ak-preflight-"));
     dirs.push(dir);
     const workspace = join(dir, "Türkçe proje");
     mkdirSync(workspace);
