@@ -242,6 +242,7 @@ async function nativeFromShim(source: string): Promise<string | null> {
 }
 
 export class AgentRegistry {
+  private discoveryId = randomUUID();
   private rows: AgentRecord[] = [initial("claude-code"), initial("codex-cli")];
   private busy = false;
   private stopped = false;
@@ -266,6 +267,29 @@ export class AgentRegistry {
     this.stopped = true;
     this.controller.abort();
   }
+  /** Read-only selection for human-terminal preparation. Never runs --version. */
+  async terminalIdentity(id: IntegrationId) {
+    if (this.stopped || this.busy) throw new Error("IDENTITY_UNAVAILABLE");
+    const discoveryId = this.discoveryId;
+    const expected = this.rows.find(
+      (row) => row.integrationId === id,
+    )?.executable;
+    if (!expected || expected.kind === "cmd")
+      throw new Error("IDENTITY_UNAVAILABLE");
+    const current = await identity(expected.path);
+    const source = await identity(expected.sourcePath);
+    if (
+      this.stopped ||
+      this.busy ||
+      discoveryId !== this.discoveryId ||
+      current.path !== expected.path ||
+      current.fingerprint !== expected.fingerprint ||
+      source.path !== expected.sourceCanonicalPath ||
+      source.fingerprint !== expected.sourceFingerprint
+    )
+      throw new Error("IDENTITY_CHANGED");
+    return { discoveryId, executable: structuredClone(expected) };
+  }
   async execute(input: unknown): Promise<AgentState> {
     const command = agentCommandSchema.parse(input);
     if (this.stopped) throw new Error("Keşif kapatıldı.");
@@ -275,6 +299,7 @@ export class AgentRegistry {
     this.busy = true;
     try {
       if (command.method === "discover") {
+        this.discoveryId = randomUUID();
         const next: AgentRecord[] = [];
         for (const id of ["claude-code", "codex-cli"] as const)
           next.push(await this.discover(id));

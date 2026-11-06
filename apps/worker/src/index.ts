@@ -7,11 +7,13 @@ import {
   terminalRequestSchema,
   agentRequestSchema,
   sessionRequestSchema,
+  humanCliRequestSchema,
   type TerminalResponse,
 } from "@ajankati/contracts";
 import { TerminalHost } from "./terminal-host";
 import { AgentRegistry } from "./agent-registry";
 import { SessionHost } from "./session-host";
+import { HumanCliHost } from "./human-cli-host";
 
 async function main(): Promise<void> {
   const filename = process.argv[2];
@@ -28,11 +30,14 @@ async function main(): Promise<void> {
     const service = new WorkerService(store, new MockAgent());
     const terminal = new TerminalHost(dirname(filename));
     const agents = new AgentRegistry();
+    // No workspace registration/renderer picker until its acceptance gate passes.
+    const humanCli = new HumanCliHost(agents);
     const sessions = new SessionHost(store);
     let stopping = false;
     const stop = async () => {
       if (stopping) return;
       stopping = true;
+      await humanCli.stop();
       agents.stop();
       await terminal.stop();
       await service.stop();
@@ -43,6 +48,39 @@ async function main(): Promise<void> {
     };
     process.on("message", (message: unknown) => {
       if (stopping) return;
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "protocol" in message &&
+        message.protocol === "human-cli"
+      ) {
+        const parsed = humanCliRequestSchema.safeParse(message);
+        if (!parsed.success) {
+          void stop();
+          return;
+        }
+        const envelope = {
+          protocol: "human-cli",
+          version: 1,
+          requestId: parsed.data.requestId,
+        };
+        void humanCli
+          .execute(parsed.data.command)
+          .then((data) => {
+            if (process.connected)
+              process.send?.({ ...envelope, ok: true, data });
+          })
+          .catch(() => {
+            if (process.connected)
+              process.send?.({
+                ...envelope,
+                ok: false,
+                error:
+                  "İnsan kontrollü CLI isteği reddedildi; gerçek başlatma kapalı.",
+              });
+          });
+        return;
+      }
       if (
         typeof message === "object" &&
         message !== null &&

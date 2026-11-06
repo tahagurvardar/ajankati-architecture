@@ -1,5 +1,6 @@
 import { z } from "zod";
 export * from "./terminal";
+export * from "./human-cli";
 export * from "./agents";
 export * from "./sessions";
 export * from "./managed-task";
