@@ -39,6 +39,15 @@ const identity = z
     device: id,
     fileId: id,
     birthtimeNs: id,
+    native: z
+      .object({
+        finalPath: managedWindowsPathSchema,
+        volumeSerial: z.string().regex(/^\d{1,20}$/),
+        fileId: z.string().regex(/^[a-f0-9]{32}$/),
+      })
+      .strict()
+      .readonly()
+      .optional(),
   })
   .strict()
   .readonly();

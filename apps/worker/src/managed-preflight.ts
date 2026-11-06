@@ -19,6 +19,10 @@ import {
 } from "@ajankati/contracts";
 import type { Store } from "@ajankati/storage";
 import {
+  withNativePath,
+  type NativePathIdentity,
+} from "./native-path-boundary";
+import {
   sealManagedPlan,
   taskDigest,
 } from "../../../packages/storage/src/managed-task";
@@ -32,9 +36,9 @@ const preparation = z
   })
   .strict();
 
-/** Metadata snapshot only. lstat rejects ordinary links/junctions, but is NOT
- * proof against all Windows reparse tags or replacement races. Native handle
- * validation remains an unknown gate, so these snapshots never authorize IO. */
+/** Existing metadata checks remain in addition to the native lease. Neither a
+ * persisted snapshot nor a released lease authorizes future IO. The native gate
+ * remains unknown until a later consumer and its entire lifetime are proven. */
 function inspectPath(input: string, directory: boolean) {
   const path = managedWindowsPathSchema.parse(input);
   if (process.platform !== "win32")
@@ -63,6 +67,15 @@ function inspectPath(input: string, directory: boolean) {
   };
 }
 function fileIdentity(path: string, limit: number) {
+  return withNativePath(path, false, (native) =>
+    pinnedFileIdentity(path, limit, native),
+  );
+}
+function pinnedFileIdentity(
+  path: string,
+  limit: number,
+  native: NativePathIdentity,
+) {
   const identity = inspectPath(path, false);
   const fd = openSync(path, "r");
   try {
@@ -91,7 +104,7 @@ function fileIdentity(path: string, limit: number) {
       JSON.stringify(inspectPath(path, false)) !== JSON.stringify(identity)
     )
       throw new Error("Executable changed");
-    return { ...identity, sha256: hash.digest("hex") };
+    return { ...identity, native, sha256: hash.digest("hex") };
   } finally {
     closeSync(fd);
   }
@@ -102,6 +115,15 @@ function executableIdentity(path: string) {
   return fileIdentity(path, 256 * 1024 * 1024);
 }
 function workspaceIdentity(path: string, scope: readonly string[]) {
+  return withNativePath(path, true, (native) =>
+    pinnedWorkspaceIdentity(path, scope, native),
+  );
+}
+function pinnedWorkspaceIdentity(
+  path: string,
+  scope: readonly string[],
+  native: NativePathIdentity,
+) {
   const identity = inspectPath(path, true);
   const files = scope.map((relative) =>
     fileIdentity(win32.join(path, ...relative.split("/")), 1024 * 1024),
@@ -109,7 +131,7 @@ function workspaceIdentity(path: string, scope: readonly string[]) {
   const contentDigest = createHash("sha256")
     .update(JSON.stringify(files))
     .digest("hex");
-  return { ...identity, contentDigest };
+  return { ...identity, native, contentDigest };
 }
 
 export function blockedPreflightStatus(): ManagedPreflightStatus {
@@ -137,7 +159,7 @@ export function blockedPreflightStatus(): ManagedPreflightStatus {
 }
 
 /** Internal offline API. No IPC route accepts paths, decisions or evidence yet.
- * A trusted human approval channel and native identity pinning are future gates. */
+ * A trusted human channel and inspection-to-execution continuity are future gates. */
 export class ManagedPreflight {
   constructor(private store: Store) {}
   prepare(input: unknown): ManagedPlan {

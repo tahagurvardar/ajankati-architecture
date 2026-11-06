@@ -52,6 +52,7 @@ if (process.platform === "win32") {
   );
   for (const file of [
     "job_owner.node",
+    "path_boundary.node",
     "diagnostic_bootstrap.exe",
     "stdio_owner.node",
   ])
