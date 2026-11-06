@@ -175,3 +175,7 @@ beklenen negatif testlerdir; smoke exit kodu 0'dır.
 PR #14'ün ilk GitHub Ubuntu koşusunda `tests/managed-preflight.test.ts` içindeki gerçek dosya kimliği/junction testleri Linux geçici dosya yollarını Windows sürücü-yolu şemasına verdiği için `Unsafe Windows path` ile başarısız oldu. Bu, doğrulanmış Windows üretim çalışma sınırı hakkında bir kanıt değildir. Aynı ilk matriste Windows işi iptal edildi; başarılı sayılmaz.
 
 Düzeltme yalnız test kapsamını ayırır: saf Windows yol şeması reddi testleri bütün işletim sistemlerinde çalışır, gerçek Win32 dosya kimliği/SQLite/bağlantı ve junction fixture grubu yalnız Windows'ta çalışır. Üretim yol doğrulaması, erişim kuralları, canlı görev yasağı ve güvenlik kapıları değiştirilmedi. Başarılı bir GitHub CI sonucu ancak yeni PR head'i için her iki iş de tamamlandıktan sonra raporlanacaktır.
+
+### Windows GitHub runner TEMP kanonik yol düzeltmesi
+
+İkinci PR CI koşusunda Ubuntu başarılıydı, fakat Windows'taki yeni managed-preflight fixture grubu `Path alias rejected` ile başarısız oldu. Yerel Windows geliştirme ortamında aynı testler geçmişti. Hosted Windows runner'ın TEMP yolunun kanonik fiziksel yol ile eşleşmemesi olası neden olarak değerlendirildi. Test fixture kökü artık `realpathSync.native(tmpdir())` üzerinden oluşturuluyor. Bu değişiklik yalnız testlerde yapılmıştır; `inspectPath` yol alias reddi, reparse kontrolleri, onay ve canlı yürütme kilidi değiştirilmemiştir. Yeni CI sonucuna kadar Windows doğrulaması başarılı sayılmaz.
