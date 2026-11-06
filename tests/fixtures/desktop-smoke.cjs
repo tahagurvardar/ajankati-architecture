@@ -1,7 +1,7 @@
 // Runs the real production entry, preload, renderer, Node worker and SQLite.
 // Never disable Electron's sandbox in this test.
-const { app } = require("electron");
-const { writeFileSync, mkdirSync } = require("node:fs");
+const { app, dialog } = require("electron");
+const { writeFileSync, mkdirSync, realpathSync } = require("node:fs");
 const { resolve } = require("node:path");
 const data = process.env.AJANKATI_SMOKE_DATA;
 if (!data)
@@ -32,6 +32,48 @@ app.on("browser-window-created", (_event, window) => {
   window.webContents.on("did-finish-load", async () => {
     try {
       console.log("SMOKE renderer loaded");
+      await window.webContents.executeJavaScript(`(async () => {
+        const state = await window.ajankatiHumanCli.list();
+        if (state.liveLaunch !== false || state.managedExecution !== false || state.session !== null || state.workspaces.length !== 0) throw new Error('Unsafe human CLI state');
+        if (window.ajankatiHumanCli.start || window.ajankatiHumanCli.registerWorkspace) throw new Error('Excess human CLI authority');
+        let rejected = false;
+        try { await window.ajankatiHumanCli.prepare('claude-code', 'renderer-path'); } catch { rejected = true; }
+        if (!rejected) throw new Error('Untrusted workspace accepted');
+      })()`);
+      // Test-only native dialog substitution. Production has no picker override or fixture flag.
+      const originalPicker = dialog.showOpenDialog;
+      try {
+        dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+        const cancelled = await window.webContents.executeJavaScript(
+          "window.ajankatiHumanCli.selectWorkspace()",
+        );
+        if (cancelled !== null)
+          throw new Error("Cancelled picker registered authority");
+        if (process.platform === "win32") {
+          const workspace = resolve(
+            realpathSync.native(data),
+            "human-cli-workspace",
+          );
+          mkdirSync(workspace);
+          dialog.showOpenDialog = async () => ({
+            canceled: false,
+            filePaths: [workspace],
+          });
+          const registered = await window.webContents.executeJavaScript(
+            "window.ajankatiHumanCli.selectWorkspace()",
+          );
+          if (
+            registered.workspaces.length !== 1 ||
+            registered.workspaces[0].path !== workspace
+          )
+            throw new Error("Native selection did not reach worker");
+        }
+      } finally {
+        dialog.showOpenDialog = originalPicker;
+      }
+      console.log(
+        "SMOKE human-cli trusted picker bridge; liveLaunch=false; no provider process",
+      );
       window.show();
       window.focus();
       const navigate = async (route) => {
@@ -121,7 +163,8 @@ app.on("browser-window-created", (_event, window) => {
             );
           if (route === "overview") {
             // Real preload/worker inventory (read-only list); no process is launched.
-            const drawer = await window.webContents.executeJavaScript(`(async () => {
+            const drawer = await window.webContents
+              .executeJavaScript(`(async () => {
               const hotspot = document.querySelector('.hotspot[data-agent="claude"]');
               hotspot.focus();
               hotspot.click();
@@ -157,7 +200,8 @@ app.on("browser-window-created", (_event, window) => {
                 (await window.webContents.capturePage()).toPNG(),
               );
             }
-            const closed = await window.webContents.executeJavaScript(`(async () => {
+            const closed = await window.webContents
+              .executeJavaScript(`(async () => {
               const hotspot = document.querySelector('.hotspot[data-agent="claude"]');
               document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
               await new Promise(resolve => setTimeout(resolve, 50));

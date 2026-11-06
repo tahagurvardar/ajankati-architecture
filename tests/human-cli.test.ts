@@ -15,7 +15,9 @@ import { HumanCliHost } from "../apps/worker/src/human-cli-host";
 import type { HumanCliState } from "../packages/contracts/src";
 
 const dirs: string[] = [];
+const hosts: HumanCliHost[] = [];
 afterEach(() => {
+  for (const host of hosts.splice(0)) void host.stop();
   vi.restoreAllMocks();
   for (const dir of dirs.splice(0))
     rmSync(dir, { recursive: true, force: true });
@@ -32,7 +34,13 @@ async function fixture() {
   writeFileSync(join(dir, "codex.exe"), "offline-codex");
   const registry = new AgentRegistry({ directories: [dir], platform: "win32" });
   await registry.execute({ method: "discover", payload: {} });
-  const host = new HumanCliHost(registry, new Map([["w", workspace]]));
+  const host = new HumanCliHost(registry);
+  hosts.push(host);
+  const registered = await host.execute({
+    method: "register-workspace",
+    payload: { path: workspace },
+  });
+  prepare.payload.workspaceId = registered.workspaces[0]!.workspaceId;
   return { dir, workspace, registry, host };
 }
 const prepare = {
@@ -49,6 +57,33 @@ function start(state: HumanCliState) {
     },
   };
 }
+it.runIf(process.platform === "win32")(
+  "bounds registrations and rejects replacement during duplicate registration",
+  async () => {
+    const { host, dir, workspace } = await fixture();
+    for (let i = 1; i < 16; i++) {
+      const path = join(dir, `workspace-${i}`);
+      mkdirSync(path);
+      await host.execute({ method: "register-workspace", payload: { path } });
+    }
+    const extra = join(dir, "extra");
+    mkdirSync(extra);
+    await expect(
+      host.execute({ method: "register-workspace", payload: { path: extra } }),
+    ).rejects.toThrow("WORKSPACE_LIMIT");
+    renameSync(workspace, workspace + "-old");
+    mkdirSync(workspace);
+    await expect(
+      host.execute({
+        method: "register-workspace",
+        payload: { path: workspace },
+      }),
+    ).rejects.toThrow("IDENTITY_CHANGED");
+    expect(
+      (await host.execute({ method: "list", payload: {} })).workspaces,
+    ).toHaveLength(15);
+  },
+);
 it.runIf(process.platform === "win32")(
   "prepares exact identities without launching, then consumes consent into a blocked result",
   async () => {
@@ -68,6 +103,67 @@ it.runIf(process.platform === "win32")(
     expect(
       (await host.execute({ method: "list", payload: {} })).session,
     ).toMatchObject({ status: "blocked", approvalToken: null });
+  },
+);
+it.runIf(process.platform === "win32")(
+  "pins registration before preparation, deduplicates and rejects replacement",
+  async () => {
+    const { host, workspace } = await fixture();
+    const before = await host.execute({ method: "list", payload: {} });
+    const again = await host.execute({
+      method: "register-workspace",
+      payload: { path: workspace },
+    });
+    expect(again.workspaces).toEqual(before.workspaces);
+    renameSync(workspace, workspace + "-old");
+    mkdirSync(workspace);
+    await expect(host.execute(prepare)).rejects.toThrow("IDENTITY_CHANGED");
+    expect(
+      (await host.execute({ method: "list", payload: {} })).workspaces,
+    ).toEqual([]);
+  },
+);
+
+it.runIf(process.platform === "win32")(
+  "consumes simultaneous approvals once and expires during identity verification",
+  async () => {
+    const { host, registry } = await fixture();
+    const state = await host.execute(prepare);
+    const identity = await registry.terminalIdentity("claude-code");
+    let finish!: () => void;
+    vi.spyOn(registry, "terminalIdentity").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(identity);
+        }),
+    );
+    const pending = host.execute(start(state));
+    await expect(host.execute(start(state))).rejects.toThrow("BUSY");
+    vi.spyOn(Date, "now").mockReturnValue(state.session!.expiresAt + 1);
+    finish();
+    await expect(pending).rejects.toThrow("CONSENT_EXPIRED");
+    await expect(host.execute(start(state))).rejects.toThrow("CONSENT_INVALID");
+  },
+);
+
+it.runIf(process.platform === "win32")(
+  "rejects malformed registration, file roots and traversal without storing authority",
+  async () => {
+    const { host, dir } = await fixture();
+    for (const path of [
+      join(dir, "claude.exe"),
+      dir + "\\..\\escape",
+      "\\\\server\\share",
+      "C:\\",
+      dir + "\\missing",
+    ]) {
+      await expect(
+        host.execute({ method: "register-workspace", payload: { path } }),
+      ).rejects.toThrow();
+    }
+    expect(
+      (await host.execute({ method: "list", payload: {} })).workspaces,
+    ).toHaveLength(1);
   },
 );
 it
@@ -108,7 +204,7 @@ it.runIf(process.platform === "win32").each([60001, -1])(
 it.runIf(process.platform === "win32")(
   "requires stop consent, rejects cross-owner references and never replays after restart",
   async () => {
-    const { host, registry, workspace } = await fixture();
+    const { host, registry } = await fixture();
     const state = await host.execute(prepare);
     await expect(
       host.execute({
@@ -116,7 +212,7 @@ it.runIf(process.platform === "win32")(
         payload: { sessionId: state.session!.sessionId, approved: false },
       }),
     ).rejects.toThrow();
-    const other = new HumanCliHost(registry, new Map([["w", workspace]]));
+    const other = new HumanCliHost(registry);
     await expect(other.execute(start(state))).rejects.toThrow("SESSION_OWNER");
     await host.execute({
       method: "stop",
@@ -139,9 +235,10 @@ it.runIf(process.platform === "win32")(
     );
     symlinkSync(workspace, join(dir, "alias"), "junction");
     await expect(
-      new HumanCliHost(registry, new Map([["w", join(dir, "alias")]])).execute(
-        prepare,
-      ),
+      new HumanCliHost(registry).execute({
+        method: "register-workspace",
+        payload: { path: join(dir, "alias") },
+      }),
     ).rejects.toThrow();
     const pending = host.execute(prepare);
     await expect(host.execute(prepare)).rejects.toThrow("BUSY");

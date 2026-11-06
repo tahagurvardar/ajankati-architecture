@@ -8,6 +8,8 @@ import {
   agentRequestSchema,
   sessionRequestSchema,
   humanCliRequestSchema,
+  humanCliResponseSchema,
+  MAX_FRAME_BYTES,
   type TerminalResponse,
 } from "@ajankati/contracts";
 import { TerminalHost } from "./terminal-host";
@@ -30,7 +32,7 @@ async function main(): Promise<void> {
     const service = new WorkerService(store, new MockAgent());
     const terminal = new TerminalHost(dirname(filename));
     const agents = new AgentRegistry();
-    // No workspace registration/renderer picker until its acceptance gate passes.
+    // Registrations originate only from the owning main process's native picker.
     const humanCli = new HumanCliHost(agents);
     const sessions = new SessionHost(store);
     let stopping = false;
@@ -48,6 +50,10 @@ async function main(): Promise<void> {
     };
     process.on("message", (message: unknown) => {
       if (stopping) return;
+      if (Buffer.byteLength(JSON.stringify(message)) > MAX_FRAME_BYTES) {
+        void stop();
+        return;
+      }
       if (
         typeof message === "object" &&
         message !== null &&
@@ -67,11 +73,19 @@ async function main(): Promise<void> {
         void humanCli
           .execute(parsed.data.command)
           .then((data) => {
-            if (process.connected)
-              process.send?.({ ...envelope, ok: true, data });
+            const response = humanCliResponseSchema.parse({
+              ...envelope,
+              ok: true,
+              data,
+            });
+            if (Buffer.byteLength(JSON.stringify(response)) > MAX_FRAME_BYTES) {
+              void stop();
+              return;
+            }
+            if (!stopping && process.connected) process.send?.(response);
           })
           .catch(() => {
-            if (process.connected)
+            if (!stopping && process.connected)
               process.send?.({
                 ...envelope,
                 ok: false,

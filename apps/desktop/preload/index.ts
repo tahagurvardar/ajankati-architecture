@@ -63,3 +63,19 @@ const sessions: SessionApi = {
     ipcRenderer.invoke("ajankati:sessions-terminate", { sessionId }),
 };
 contextBridge.exposeInMainWorld("ajankatiSessions", Object.freeze(sessions));
+import type { HumanCliApi } from "@ajankati/contracts";
+const humanCli: HumanCliApi = {
+  list: () => ipcRenderer.invoke("ajankati:human-cli-list", {}),
+  selectWorkspace: () =>
+    ipcRenderer.invoke("ajankati:human-cli-select-workspace", {}),
+  prepare: (integrationId, workspaceId) =>
+    ipcRenderer.invoke("ajankati:human-cli-prepare", {
+      integrationId,
+      workspaceId,
+    }),
+  approve: (sessionId) =>
+    ipcRenderer.invoke("ajankati:human-cli-approve", { sessionId }),
+  stop: (sessionId) =>
+    ipcRenderer.invoke("ajankati:human-cli-stop", { sessionId }),
+};
+contextBridge.exposeInMainWorld("ajankatiHumanCli", Object.freeze(humanCli));
