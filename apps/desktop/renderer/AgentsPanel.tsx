@@ -1,21 +1,10 @@
 import { useEffect, useState } from "react";
-import type { AgentApi, AgentState, AgentRecord } from "@ajankati/contracts";
+import type { AgentApi, AgentState } from "@ajankati/contracts";
+import {
+  capabilityLabels as labels,
+  capabilityStatus as status,
+} from "./agentView";
 
-const labels: Record<keyof AgentRecord["capabilities"], string> = {
-  versionCheck: "Sürüm kontrolü",
-  pty: "Gerçek ajan terminali",
-  processOwnership: "Süreç ağacı sahipliği",
-  permissions: "İzin denetimi",
-  cancellation: "İptal",
-  sandbox: "Sandbox",
-  structuredEvents: "Yapılandırılmış olaylar",
-  managedTasks: "Yönetilen görevler",
-};
-const status = {
-  verified: "Doğrulandı",
-  unknown: "Bilinmiyor",
-  unsupported: "Bu aşamada desteklenmiyor",
-};
 export function AgentsPanel({ api }: { api: AgentApi }) {
   const [state, setState] = useState<AgentState>({ integrations: [] });
   const [busy, setBusy] = useState(false);

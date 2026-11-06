@@ -1,21 +1,26 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from "react";
-import type { DesktopApi, Snapshot } from "@ajankati/contracts";
+import type { AgentApi, DesktopApi, Snapshot } from "@ajankati/contracts";
 import { AppShell, type Route } from "./AppShell";
 import { Overview, UnavailableView } from "./Overview";
 import { ProjectsPanel } from "./ProjectsPanel";
+import { SearchBox, type SearchTarget } from "./SearchBox";
 export function Dashboard({
   api,
+  agentApi,
   terminal,
   agents,
   reports,
 }: {
   api: DesktopApi;
+  /** Read-only inventory for the office drawer; omitted = honest "unavailable". */
+  agentApi?: AgentApi;
   terminal?: ReactNode;
   agents?: ReactNode;
   reports?: ReactNode;
@@ -30,12 +35,30 @@ export function Dashboard({
   const [visited, setVisited] = useState({ agents: false, terminal: false });
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const pendingFocus = useRef("");
   function navigate(next: Route) {
     setRoute(next);
+    setFocusMode(false);
     if (next === "agents" || next === "terminal")
       setVisited((old) => ({ ...old, [next]: true }));
   }
   const [selected, setSelected] = useState("");
+  function select(target: SearchTarget) {
+    if (target.projectId) setSelected(target.projectId);
+    navigate(target.route);
+  }
+  function newProject() {
+    pendingFocus.current = "project-name";
+    navigate("projects");
+  }
+  // Runs after AppShell's heading focus, so the quick action lands on its field.
+  useEffect(() => {
+    if (route === "projects" && pendingFocus.current) {
+      document.getElementById(pendingFocus.current)?.focus();
+      pendingFocus.current = "";
+    }
+  }, [route]);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,6 +142,8 @@ export function Dashboard({
       onNavigate={navigate}
       busy={busy || loading}
       onRefresh={() => void apply(() => api.snapshot())}
+      focusMode={focusMode}
+      search={<SearchBox data={loaded ? data : null} onSelect={select} />}
     >
       <div className="demo">
         <span className="dot" aria-hidden="true" />
@@ -139,7 +164,14 @@ export function Dashboard({
         </div>
       )}
       {route === "overview" && (
-        <Overview data={loaded ? data : null} onNavigate={navigate} />
+        <Overview
+          data={loaded ? data : null}
+          onNavigate={navigate}
+          onNewProject={newProject}
+          agentApi={agentApi}
+          focus={focusMode}
+          onFocusChange={setFocusMode}
+        />
       )}
       <div hidden={route !== "projects"}>
         <ProjectsPanel

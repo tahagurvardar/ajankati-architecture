@@ -7,6 +7,7 @@ import { SessionsPanel } from "./SessionsPanel";
 createRoot(document.getElementById("root")!).render(
   <Dashboard
     api={window.ajankati}
+    agentApi={window.ajankatiAgents}
     reports={<SessionsPanel api={window.ajankatiSessions} />}
     agents={<AgentsPanel api={window.ajankatiAgents} />}
     terminal={<TerminalPanel api={window.ajankatiTerminal} />}
