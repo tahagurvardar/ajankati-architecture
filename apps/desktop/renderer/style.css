@@ -190,6 +190,7 @@ small {
   min-width: 0;
 }
 .topbar {
+  flex-wrap: wrap;
   min-height: 66px;
   border-bottom: 1px solid var(--stroke);
   background: white;
@@ -596,4 +597,115 @@ footer {
     animation: none !important;
     transition: none !important;
   }
+}
+
+.shell.focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+.shell.focus .sidebar {
+  display: none;
+}
+.search-box {
+  position: relative;
+  flex: 1 1 220px;
+  max-width: 560px;
+}
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 9px;
+  background: #f4f7fa;
+  color: var(--secondary-text);
+  font-weight: 400;
+}
+.search-field:focus-within {
+  outline: 3px solid #bb6b17;
+  outline-offset: 2px;
+}
+.search-field input {
+  border: 0;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 13px;
+  outline: none;
+}
+.search-field kbd {
+  flex: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: #e5edf2;
+  font: inherit;
+  font-size: 11px;
+}
+.search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 8;
+  padding: 6px;
+  border: 1px solid var(--stroke);
+  border-radius: 9px;
+  background: white;
+  box-shadow: 0 10px 30px rgba(20, 43, 57, 0.15);
+}
+.search-results ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.search-results p {
+  margin: 8px;
+  font-size: 12px;
+}
+.search-hit {
+  display: grid;
+  width: 100%;
+  background: transparent;
+  color: #132c38;
+  text-align: left;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.search-hit small {
+  color: var(--secondary-text);
+}
+.chip {
+  min-height: 32px;
+  padding: 5px 11px;
+  border-color: #cbd9e1;
+  background: white;
+  color: #244e60;
+  font-size: 12px;
+  font-weight: 500;
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.task-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 24px 4px;
+}
+.project small {
+  display: block;
+  font-weight: 400;
+  color: var(--secondary-text);
+}
+.project.selected small {
+  color: #0c5c61;
+}
+.task .hash {
+  font-size: 11px;
+}
+.task .actions small {
+  color: var(--secondary-text);
+  font-size: 11px;
 }

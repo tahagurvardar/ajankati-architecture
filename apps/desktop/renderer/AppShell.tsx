@@ -45,12 +45,16 @@ export function AppShell({
   onNavigate,
   busy,
   onRefresh,
+  search,
+  focusMode = false,
   children,
 }: {
   route: Route;
   onNavigate: (route: Route) => void;
   busy: boolean;
   onRefresh: () => void;
+  search?: ReactNode;
+  focusMode?: boolean;
   children: ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -62,7 +66,7 @@ export function AppShell({
     }
   }, [route]);
   return (
-    <div className="shell">
+    <div className={focusMode ? "shell focus" : "shell"}>
       <a className="skip-link" href="#main-content">
         İçeriğe geç
       </a>
@@ -94,7 +98,7 @@ export function AppShell({
             AK
           </span>
           <div>
-            Yerel çalışma alanı<small>UI Sprint 1 · Demo</small>
+            Yerel çalışma alanı<small>UI Sprint 2 · Demo</small>
           </div>
         </div>
       </aside>
@@ -104,6 +108,7 @@ export function AppShell({
             Çalışma alanı <span aria-hidden="true">/</span>{" "}
             <strong>{routes[route][0]}</strong>
           </span>
+          {search}
           <span className="local-label">Yerel kayıtlar</span>
         </div>
         <main id="main-content" tabIndex={-1}>

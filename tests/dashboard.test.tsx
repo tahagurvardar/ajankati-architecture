@@ -104,7 +104,9 @@ it("offers a Turkish project/task workflow backed by the real service and databa
     await service.stop();
     store.close();
   }
-});
+  // Real worker + SQLite + ~15 role queries; ~2.7 s alone, so the default 5 s is
+  // too tight when `pnpm verify` runs 32 test files in parallel.
+}, 20000);
 
 it("keeps unknown snapshot counts honest, supports retry and navigates placeholders", async () => {
   const snapshot = {

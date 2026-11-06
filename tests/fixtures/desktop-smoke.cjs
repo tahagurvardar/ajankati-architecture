@@ -86,6 +86,7 @@ app.on("browser-window-created", (_event, window) => {
         document.querySelectorAll('.view-controls button')[0].click();
       })()`);
       const screenshots = resolve("apps/desktop/dist/ui-sprint-1");
+      const drawerShots = resolve("apps/desktop/dist/ui-sprint-2");
       mkdirSync(screenshots, { recursive: true });
       await navigate("projects");
       for (const [width, height, zoom] of [
@@ -118,6 +119,56 @@ app.on("browser-window-created", (_event, window) => {
               "Layout/focus failure: " +
                 JSON.stringify({ width, height, zoom, route, layout }),
             );
+          if (route === "overview") {
+            // Real preload/worker inventory (read-only list); no process is launched.
+            const drawer = await window.webContents.executeJavaScript(`(async () => {
+              const hotspot = document.querySelector('.hotspot[data-agent="claude"]');
+              hotspot.focus();
+              hotspot.click();
+              await new Promise(resolve => setTimeout(resolve, 350));
+              const dialog = document.querySelector('[role="dialog"]');
+              const rect = dialog?.getBoundingClientRect();
+              const result = {
+                open: Boolean(dialog),
+                modal: dialog?.getAttribute('aria-modal') === 'true',
+                focusOnClose: document.activeElement?.getAttribute('aria-label') === 'Ajan ayrıntılarını kapat',
+                fits: Boolean(rect) && rect.left >= -1 && rect.right <= window.innerWidth + 1,
+                pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+                honest: dialog?.textContent.includes('Etkin değil') && !dialog.textContent.includes('Çalışıyor'),
+              };
+              return result;
+            })()`);
+            if (
+              !drawer.open ||
+              !drawer.modal ||
+              !drawer.focusOnClose ||
+              !drawer.fits ||
+              drawer.pageOverflow ||
+              !drawer.honest
+            )
+              throw new Error(
+                "Drawer failure: " +
+                  JSON.stringify({ width, height, zoom, drawer }),
+              );
+            if (zoom === 1) {
+              mkdirSync(drawerShots, { recursive: true });
+              writeFileSync(
+                resolve(drawerShots, `agent-drawer-${width}x${height}.png`),
+                (await window.webContents.capturePage()).toPNG(),
+              );
+            }
+            const closed = await window.webContents.executeJavaScript(`(async () => {
+              const hotspot = document.querySelector('.hotspot[data-agent="claude"]');
+              document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+              await new Promise(resolve => setTimeout(resolve, 50));
+              return { closed: !document.querySelector('[role="dialog"]'), restored: document.activeElement === hotspot };
+            })()`);
+            if (!closed.closed || !closed.restored)
+              throw new Error(
+                "Drawer did not close with Escape/restore focus: " +
+                  JSON.stringify({ width, height, zoom, closed }),
+              );
+          }
           if (
             zoom === 1 &&
             ["overview", "projects", "terminal"].includes(route)
