@@ -169,3 +169,9 @@ beklenen negatif testlerdir; smoke exit kodu 0'dır.
 10. Ayrı yetkilendirilmiş gerçek read-only smoke, negatif güvenlik sonuçları ve
     insan incelemesi olmadan canlı kapı açılmaz. Bu PR merge edilmez; bu faz hiçbir
     canlı görev yürütmez.
+
+## GitHub CI platform kapsamı düzeltmesi
+
+PR #14'ün ilk GitHub Ubuntu koşusunda `tests/managed-preflight.test.ts` içindeki gerçek dosya kimliği/junction testleri Linux geçici dosya yollarını Windows sürücü-yolu şemasına verdiği için `Unsafe Windows path` ile başarısız oldu. Bu, doğrulanmış Windows üretim çalışma sınırı hakkında bir kanıt değildir. Aynı ilk matriste Windows işi iptal edildi; başarılı sayılmaz.
+
+Düzeltme yalnız test kapsamını ayırır: saf Windows yol şeması reddi testleri bütün işletim sistemlerinde çalışır, gerçek Win32 dosya kimliği/SQLite/bağlantı ve junction fixture grubu yalnız Windows'ta çalışır. Üretim yol doğrulaması, erişim kuralları, canlı görev yasağı ve güvenlik kapıları değiştirilmedi. Başarılı bir GitHub CI sonucu ancak yeni PR head'i için her iki iş de tamamlandıktan sonra raporlanacaktır.
