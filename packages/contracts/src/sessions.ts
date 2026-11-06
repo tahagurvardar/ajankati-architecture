@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { managedPreflightStatusSchema } from "./managed-task";
 
 const id = z.string().min(1).max(100);
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -57,6 +58,7 @@ export const sessionStateSchema = z
         liveLaunch: z.literal(false),
         protocol: z.literal("app-server/stdio"),
         blockers: z.array(z.string().max(250)).min(1).max(8),
+        preflight: managedPreflightStatusSchema,
       })
       .strict(),
     sessions: z.array(sessionUsageSchema).max(100),

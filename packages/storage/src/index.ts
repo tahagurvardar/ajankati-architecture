@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash } from "node:crypto";
 import { assertTransition } from "@ajankati/domain";
+import { ManagedTaskLedger, managedMigration } from "./managed-task";
 import {
   projectSchema,
   taskSchema,
@@ -37,6 +38,7 @@ PRAGMA user_version=2;
 /** Only the worker owns this connection; never imported by the renderer. */
 export class Store {
   private db: DatabaseSync;
+  readonly managed: ManagedTaskLedger;
   private closed = false;
   constructor(readonly filename: string) {
     this.db = new DatabaseSync(filename);
@@ -45,19 +47,28 @@ export class Store {
         "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=1000;",
       );
       const version = this.schemaVersion();
-      if (version > 2) throw new Error("Veritabanı sürümü desteklenmiyor.");
+      if (version > 3) throw new Error("Veritabanı sürümü desteklenmiyor.");
       if (this.db.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
         throw new Error("Veritabanı bütünlüğü doğrulanamadı.");
       if (version === 0)
-        this.transaction(() => this.db.exec(migration1 + migration2));
+        this.transaction(() =>
+          this.db.exec(migration1 + migration2 + managedMigration),
+        );
       if (version === 1) {
         // SQLite creates a consistent snapshot including committed WAL pages.
         // Never overwrite a backup or replace a broken database with an empty one.
         this.db
           .prepare("VACUUM INTO ?")
           .run(`${filename}.backup-v1-${randomUUID()}`);
-        this.transaction(() => this.db.exec(migration2));
+        this.transaction(() => this.db.exec(migration2 + managedMigration));
       }
+      if (version === 2) {
+        this.db
+          .prepare("VACUUM INTO ?")
+          .run(`${filename}.backup-v2-${randomUUID()}`);
+        this.transaction(() => this.db.exec(managedMigration));
+      }
+      this.managed = new ManagedTaskLedger(this.db, (id) => this.getTask(id));
     } catch (error) {
       this.db.close();
       throw error;
@@ -240,6 +251,7 @@ export class Store {
   }
   recover(): void {
     this.transaction(() => {
+      this.managed.recover();
       for (const row of this.db
         .prepare(
           "SELECT metadata FROM sessions WHERE status IN ('starting','running','awaiting_approval','stopping')",

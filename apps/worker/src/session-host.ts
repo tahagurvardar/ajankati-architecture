@@ -1,5 +1,6 @@
 import { sessionCommandSchema, type SessionState } from "@ajankati/contracts";
 import type { Store } from "@ajankati/storage";
+import { blockedPreflightStatus } from "./managed-preflight";
 
 /** Production gate: deliberately no launcher, environment flag or fixture hook. */
 export class SessionHost {
@@ -15,6 +16,7 @@ export class SessionHost {
         provider: "codex",
         liveLaunch: false,
         protocol: "app-server/stdio",
+        preflight: blockedPreflightStatus(),
         blockers: [
           "Codex için yarışsız native stdio başlatma ve süreç ağacı sahipliği doğrulanmadı.",
           "Proje kökü, oturum ayarları ve Windows dosya/ağ sınırları doğrulanmadı.",
