@@ -1,0 +1,1 @@
+{"id":7,"method":"item/tool/call","params":{"threadId":"thread-fixture","turnId":"turn-fixture","callId":"call-fixture","namespace":null,"tool":"fixture_read_resource","arguments":{"resourceId":"resource-fixture","maxBytes":32}}}
