@@ -27,7 +27,24 @@ it("provides a strict managed-task contract separate from mock task.run", () => 
   expect(contracts).toHaveProperty("managedPlanSchema");
 });
 
-describe("offline managed preflight", () => {
+// Pure path-schema rejection is portable; real Windows file identity and junction
+// fixtures must run only on win32, where their filesystem semantics are valid.
+it.each([
+  "C:relative",
+  "\\\\?\\C:\\root",
+  "\\\\server\\share",
+  "C:\\root\\..\\other",
+  "C:\\root:ads",
+  "C:\\root\\NUL.txt",
+  "C:\\root\\bad.",
+  "C:\\root\\e\u0301",
+])("rejects unsafe Windows identity %s", (path) => {
+  expect(contracts.managedWindowsPathSchema.safeParse(path).success).toBe(
+    false,
+  );
+});
+
+describe.runIf(process.platform === "win32")("offline managed preflight", () => {
   async function setup() {
     const { ManagedPreflight } = await import(
       "../apps/worker/src/managed-preflight"
@@ -395,21 +412,6 @@ describe("offline managed preflight", () => {
         scope: ["alias.md"],
       }),
     ).toThrow();
-  });
-
-  it.each([
-    "C:relative",
-    "\\\\?\\C:\\root",
-    "\\\\server\\share",
-    "C:\\root\\..\\other",
-    "C:\\root:ads",
-    "C:\\root\\NUL.txt",
-    "C:\\root\\bad.",
-    "C:\\root\\e\u0301",
-  ])("rejects unsafe Windows identity %s", (path) => {
-    expect(contracts.managedWindowsPathSchema.safeParse(path).success).toBe(
-      false,
-    );
   });
 
   it.each([
