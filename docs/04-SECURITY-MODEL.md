@@ -2,6 +2,10 @@
 
 Durum: Faz 0 önerisi. Bu belge güvenlik sertifikası veya doğrulanmış sandbox iddiası değildir. [MVP kapıları](05-MVP-ROADMAP.md) geçilmeden güvenli otonomi yayımlanmayacak.
 
+Windows uygulama yönü için [1C-3D izolasyon kararı](13-WINDOWS-ISOLATION-DECISION.md)
+worker broker + ağsız LPAC araç sürecini araştırma adayı olarak önerir. Runtime,
+auth ve OS sınırları doğrulanmadığından managed canlı yürütme kapalı kalır.
+
 ## Güven sınırları
 
 Korunan varlıklar: kullanıcının proje dosyaları ve Git çalışmaları, CLI girişleri, yerel görev/mesaj geçmişi, özel istemleri, onay kayıtları ve kaynak bütçeleri. Güvenilmeyen girdiler: depo talimatları, ajan çıktısı, terminal escape dizileri, MCP/skill açıklamaları, import edilen görevler ve renderer'dan gelen bütün argümanlar.
