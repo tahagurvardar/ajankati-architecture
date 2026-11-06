@@ -3,6 +3,7 @@ export * from "./terminal";
 export * from "./agents";
 export * from "./sessions";
 export * from "./managed-task";
+export * from "./windows-sandbox";
 export const PROTOCOL_VERSION = 1 as const;
 export const MAX_FRAME_BYTES = 256 * 1024;
 const id = z.string().min(1).max(100);
