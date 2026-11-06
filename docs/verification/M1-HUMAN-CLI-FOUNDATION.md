@@ -107,6 +107,21 @@ kapalı `sessions-start` ve malformed approval UUID logları beklenen negatif
 kontrollerdir. `Downloading Electron binary...` mesajı görüldü. UI kaynak dosyaları
 değiştirilmedi; mevcut build/smoke ile regresyon kontrolü yapıldı.
 
+## GitHub CI — Windows runner düzeltmesi
+
+İlk PR #21 CI koşusu: Ubuntu `success`, Windows `failure`. Windows'ta
+`tests/human-cli.test.ts` için **7 başarısız test**, tamamı
+`Path boundary rejected` hatasıyla `withNativePath` çağrısında durdu.
+Bunlar önceki yerel `415 passed / 1 skipped` sonucunun GitHub Windows
+runner'ında tekrarlanmadığını gösterir; ilk CI başarısı iddia edilmez.
+
+Neden: test fikstürü `tmpdir()` yolunu doğrudan kullanıyordu. Windows hosted
+runner bu dizini alias üzerinden sunabiliyor; native sınır bu yolu haklı olarak
+reddediyor. Yalnız test fikstürünün başlangıcı `realpathSync.native(tmpdir())`
+ile kanonikleştirildi; üretim `withNativePath`, onay ve yürütme kapıları
+değiştirilmedi. Bu düzeltmenin sonuçları GitHub'da yeni commit CI'ı başarıyla
+tamamlanana kadar **beklemede** kabul edilmelidir.
+
 ## Başarısız ilk denemeler ve TDD izi
 
 - İlk `pnpm test -- tests/human-cli-contracts.test.ts`, pnpm store kilidine sandbox
