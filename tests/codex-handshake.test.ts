@@ -5,6 +5,7 @@ import type { HandshakeDiagnostic } from "../apps/worker/src/codex-handshake";
 
 function fixture(response: Buffer | Buffer[], cleaned = true, exit = false) {
   const sent: string[] = [];
+  const written: string[] = [];
   let data!: (chunk: Buffer) => void;
   let exited!: () => void;
   const transport: CodexTransport & { drain(): Promise<void> } = {
@@ -14,6 +15,7 @@ function fixture(response: Buffer | Buffer[], cleaned = true, exit = false) {
       return () => {};
     },
     write(line) {
+      written.push(line);
       sent.push(JSON.parse(line).method);
       if (sent.length === 1)
         queueMicrotask(() => {
@@ -30,6 +32,7 @@ function fixture(response: Buffer | Buffer[], cleaned = true, exit = false) {
   return {
     transport,
     sent,
+    written,
     emitExit: () => exited(),
     emitData: (chunk: Buffer) => data(chunk),
   };
@@ -350,4 +353,241 @@ it.each([
   expect(diagnostics).toEqual([
     { category, phase: "after_response", frame: 2 },
   ]);
+});
+
+const remoteStatus = {
+  method: "remoteControl/status/changed",
+  params: {
+    status: "disabled",
+    serverName: "private-server",
+    installationId: "private-installation",
+    environmentId: null,
+  },
+};
+const jsonl = (value: unknown) => JSON.stringify(value) + "\n";
+
+it("writes the pinned protocol's parameterless initialized notification", async () => {
+  const { transport, written } = fixture(Buffer.from(reply));
+  await initializeOnly(transport);
+  expect(written[1]).toBe('{"method":"initialized"}\n');
+});
+
+it.each(["disabled", "connecting", "connected", "errored"])(
+  "accepts pinned remote status %s without retaining identity or time",
+  async (status) => {
+    const diagnostics: HandshakeDiagnostic[] = [];
+    const value = {
+      ...remoteStatus,
+      params: {
+        ...remoteStatus.params,
+        status,
+        environmentId: "private-environment",
+      },
+      emittedAtMs: 123456789,
+    };
+    const { transport, sent } = fixture(Buffer.from(reply + jsonl(value)));
+    await expect(
+      initializeOnly(transport, (d) => diagnostics.push(d)),
+    ).resolves.toEqual({ initialized: true, cleaned: true });
+    expect(diagnostics).toEqual([
+      {
+        category: "startup_notification",
+        method: "remoteControl/status/changed",
+        phase: "after_response",
+        frame: 2,
+      },
+    ]);
+    expect(sent).toEqual(["initialize", "initialized"]);
+  },
+);
+
+it.each(["before", "chunked", "drain", "cleanup"])(
+  "accepts bounded remote status during %s",
+  async (phase) => {
+    const line = jsonl(remoteStatus);
+    const { transport, emitData, emitExit } = fixture(
+      phase === "before"
+        ? Buffer.from(line + reply)
+        : phase === "chunked"
+          ? [...Buffer.from(reply + line)].map((b) => Buffer.from([b]))
+          : Buffer.from(reply),
+    );
+    if (phase === "drain")
+      transport.drain = async () => {
+        emitData(Buffer.from(line));
+      };
+    const terminate = vi.fn(async () => {
+      if (phase === "cleanup") emitData(Buffer.from(line));
+      emitExit();
+      return true;
+    });
+    transport.terminate = terminate;
+    await expect(initializeOnly(transport)).resolves.toEqual({
+      initialized: true,
+      cleaned: true,
+    });
+    expect(terminate).toHaveBeenCalledOnce();
+  },
+);
+
+it.each([
+  remoteStatus,
+  { method: "warning", params: { message: "private-body" } },
+  { method: "configWarning", params: { summary: "private-body" } },
+  { method: "deprecationNotice", params: { summary: "private-body" } },
+])("validates optional timestamps for allowlisted method %#", async (value) => {
+  for (const emittedAtMs of [
+    undefined,
+    null,
+    0,
+    -1,
+    Number.MIN_SAFE_INTEGER,
+    Number.MAX_SAFE_INTEGER,
+  ]) {
+    const { transport } = fixture(
+      Buffer.from(reply + jsonl({ ...value, emittedAtMs })),
+    );
+    await expect(initializeOnly(transport)).resolves.toEqual({
+      initialized: true,
+      cleaned: true,
+    });
+  }
+  for (const emittedAtMs of [
+    "private-time",
+    true,
+    {},
+    [],
+    0.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.MIN_SAFE_INTEGER - 1,
+  ]) {
+    const diagnostics: HandshakeDiagnostic[] = [];
+    const { transport } = fixture(
+      Buffer.from(reply + jsonl({ ...value, emittedAtMs })),
+    );
+    await expect(
+      initializeOnly(transport, (d) => diagnostics.push(d)),
+    ).rejects.toThrow("UNEXPECTED_MESSAGE");
+    expect(diagnostics).toEqual([
+      {
+        category: "schema_mismatch",
+        method: value.method,
+        field: "envelope",
+        issue: "invalid",
+        phase: "after_response",
+        frame: 2,
+      },
+    ]);
+  }
+});
+
+it.each([
+  { status: "private-unknown" },
+  { status: 1 },
+  { status: null },
+  { status: undefined },
+  { serverName: undefined },
+  { serverName: null },
+  { serverName: 1 },
+  { serverName: "x".repeat(4097) },
+  { installationId: undefined },
+  { installationId: null },
+  { installationId: {} },
+  { installationId: "x".repeat(4097) },
+  { environmentId: 1 },
+  { environmentId: {} },
+  { environmentId: "x".repeat(4097) },
+  { "private-key": "private-value" },
+])(
+  "rejects malformed remote payload without disclosing values %#",
+  async (patch) => {
+    const diagnostics: HandshakeDiagnostic[] = [];
+    const { transport } = fixture(
+      Buffer.from(
+        reply +
+          jsonl({
+            ...remoteStatus,
+            params: { ...remoteStatus.params, ...patch },
+          }),
+      ),
+    );
+    const terminate = vi.fn(async () => true);
+    transport.terminate = terminate;
+    await expect(
+      initializeOnly(transport, (d) => diagnostics.push(d)),
+    ).rejects.toThrow("UNEXPECTED_MESSAGE");
+    expect(diagnostics).toEqual([
+      {
+        category: "schema_mismatch",
+        method: "remoteControl/status/changed",
+        field: "envelope",
+        issue: patch["private-key" as keyof typeof patch]
+          ? "unexpected_field"
+          : Object.values(patch)[0] === undefined
+            ? "missing"
+            : "invalid",
+        phase: "after_response",
+        frame: 2,
+      },
+    ]);
+    expect(terminate).toHaveBeenCalledOnce();
+  },
+);
+
+it.each([null, undefined, [], "private-body"])(
+  "rejects non-object remote params %#",
+  async (params) => {
+    const { transport } = fixture(
+      Buffer.from(reply + jsonl({ ...remoteStatus, params })),
+    );
+    await expect(initializeOnly(transport)).rejects.toThrow(
+      "UNEXPECTED_MESSAGE",
+    );
+  },
+);
+
+it.each([undefined, null, "", "x".repeat(4096)])(
+  "accepts bounded nullable remote identity %#",
+  async (environmentId) => {
+    const { transport } = fixture(
+      Buffer.from(
+        reply +
+          jsonl({
+            ...remoteStatus,
+            params: {
+              status: "disabled",
+              serverName: "",
+              installationId: "x".repeat(4096),
+              environmentId,
+            },
+          }),
+      ),
+    );
+    await expect(initializeOnly(transport)).resolves.toEqual({
+      initialized: true,
+      cleaned: true,
+    });
+  },
+);
+
+it.each([
+  { ...remoteStatus, id: null },
+  { ...remoteStatus, id: 2 },
+  { ...remoteStatus, result: {} },
+  { ...remoteStatus, "private-key": true },
+  { ...remoteStatus, method: "private-unknown" },
+  { ...remoteStatus, method: "item/tool/call", id: 2 },
+  { ...remoteStatus, method: "item/commandExecution/requestApproval", id: 2 },
+  { ...remoteStatus, method: "execCommandApproval" },
+])("does not let timestamp envelopes bypass rejection %#", async (value) => {
+  const diagnostics: HandshakeDiagnostic[] = [];
+  const { transport } = fixture(
+    Buffer.from(reply + jsonl({ ...value, emittedAtMs: 123456789 })),
+  );
+  await expect(
+    initializeOnly(transport, (d) => diagnostics.push(d)),
+  ).rejects.toThrow(
+    "id" in value ? "UNEXPECTED_REQUEST" : "UNEXPECTED_MESSAGE",
+  );
+  expect(JSON.stringify(diagnostics)).not.toMatch(/private-|123456789/);
 });

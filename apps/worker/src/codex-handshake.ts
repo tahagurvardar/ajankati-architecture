@@ -26,9 +26,28 @@ const position = z
   })
   .strict();
 // Only informational startup notifications. No request (id), tools or approvals.
+// rust-v0.164.0 uses Option<i64>; accept only the lossless JS integer subset.
+// These transient values and remote identities never enter diagnostics/results.
+const notificationEnvelope = { emittedAtMs: z.number().int().safe().nullish() };
+const remoteIdentity = z.string().max(4096);
 const notification = z.discriminatedUnion("method", [
   z
     .object({
+      ...notificationEnvelope,
+      method: z.literal("remoteControl/status/changed"),
+      params: z
+        .object({
+          status: z.enum(["disabled", "connecting", "connected", "errored"]),
+          serverName: remoteIdentity,
+          installationId: remoteIdentity,
+          environmentId: remoteIdentity.nullish(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...notificationEnvelope,
       method: z.literal("warning"),
       params: z
         .object({ message: text, threadId: z.null().optional() })
@@ -37,12 +56,14 @@ const notification = z.discriminatedUnion("method", [
     .strict(),
   z
     .object({
+      ...notificationEnvelope,
       method: z.literal("deprecationNotice"),
       params: z.object({ summary: text, details: text.nullish() }).strict(),
     })
     .strict(),
   z
     .object({
+      ...notificationEnvelope,
       method: z.literal("configWarning"),
       params: z
         .object({
@@ -65,6 +86,7 @@ const diagnosticMethods = [
   "warning",
   "configWarning",
   "deprecationNotice",
+  "remoteControl/status/changed",
 ] as const;
 type DiagnosticMethod = (typeof diagnosticMethods)[number] | "unknown";
 export interface HandshakeDiagnostic {
@@ -252,7 +274,7 @@ export async function initializeOnly(
       transport.write(JSON.stringify(initializeRequest()) + "\n");
     });
     if (failure) throw failure;
-    transport.write('{"method":"initialized","params":{}}\n');
+    transport.write('{"method":"initialized"}\n');
     await transport.drain();
     if (failure) throw failure;
   } catch (error) {
