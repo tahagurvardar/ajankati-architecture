@@ -60,9 +60,20 @@ export class TerminalHost {
   private failed = false;
   private inputWindow = 0;
   private inputBytes = 0;
+  private startup?: Promise<TerminalState>;
 
   async execute(raw: TerminalCommand): Promise<TerminalState> {
     const command = terminalCommandSchema.parse(raw);
+    const operation = this.run(command);
+    if (command.method !== "start" || this.startup) return operation;
+    this.startup = operation;
+    try {
+      return await operation;
+    } finally {
+      this.startup = undefined;
+    }
+  }
+  private async run(command: TerminalCommand): Promise<TerminalState> {
     if (this.stopped || this.closing || this.starting || this.failed)
       throw new Error("Terminal kapatılıyor veya sahiplik doğrulanamadı.");
     if (command.method === "start") {
@@ -87,9 +98,13 @@ export class TerminalHost {
         throw new Error("Terminal kapatılıyor.");
       }
       this.release();
-      const directory = mkdtempSync(
-        join(this.directoryRoot, "AjanKatı terminal "),
-      );
+      let directory: string;
+      try {
+        directory = mkdtempSync(join(this.directoryRoot, "AjanKatı terminal "));
+      } catch (error) {
+        this.starting = false;
+        throw error;
+      }
       let job: DiagnosticJob | undefined;
       try {
         job = this.createJob();
@@ -143,7 +158,9 @@ export class TerminalHost {
         this.inputWindow = Date.now();
         const until = Date.now() + 10000;
         while (!session.output.read(0).output.includes("READY Türkçe ConPTY")) {
-          if (this.stopped || session.rootExited || Date.now() > until)
+          // During cancellation, let the fixed trusted bootstrap settle first.
+          // Killing an empty job before association is not terminal exit proof.
+          if (session.rootExited || Date.now() > until)
             throw new Error("Contained diagnostic launch failed.");
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
@@ -299,6 +316,7 @@ export class TerminalHost {
   }
   async stop(): Promise<void> {
     this.stopped = true;
+    await this.startup?.catch(() => {});
     if (this.session) await this.terminate(this.session);
     this.release();
   }
