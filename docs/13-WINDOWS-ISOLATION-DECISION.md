@@ -3,6 +3,11 @@
 Tarih: 6 Kasım 2026. Başlangıç: `27f0876f8942e667329bbadd2c3728637375da0b`
 (PR #16). Durum: **tasarım adayı; managed yürütme için NO-GO**.
 
+Takip: [1C-3E profilsiz LPAC fizibilitesi](verification/PHASE-1C-3E.md),
+SID/attribute hazırlığını gerçek Windows API'leriyle salt-okunur sorgular.
+Profilsiz runtime, LPAC kimliği ve cleanup önkoşulları doğrulanamadığından
+LPAC fixture başlatılmadı; NO-GO ve kapalı yürütme kapıları korunur.
+
 ## Karar
 
 8 GB Windows 11 hedefi için öneri: **worker'ın sahip olduğu dar yetki broker'ı,
