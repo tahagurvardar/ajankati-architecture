@@ -87,3 +87,14 @@ tekrarlamak önerilmez. MVP için insan kontrollü terminal + offline inceleme
 
 Başlangıçta mevcut `.serena/` untracked dizini teslim dışıdır. Commit/push ve
 main hedefli PR kullanıcı tarafından bu faz için yetkilendirildi; merge yasaktır.
+
+Teslim kontrolü: staged `git diff --check` exit 0; yalnız yukarıdaki üç yeni
+belge stage edildi. `apps`, `packages`, `scripts`, `tests`, lockfile ve eski
+3F manifest/rapor diff'i boş; preflight kapalı değerleri kaynakta tekrar görüldü.
+İlk commit `bd41a573bb729a9b4a8c4241d3d5e26a6a2d0071` oluşturuldu.
+İlk push sandbox'ta GitHub:443 bağlantı hatasıyla exit 1 verdi; kullanıcı
+onaylı normal kullanıcı ağ erişimiyle tekrar exit 0, remote branch güncellendi.
+[PR #20](https://github.com/tahagurvardar/ajankati-architecture/pull/20)
+GitHub connector ile `main` hedefli açıldı; create yanıtında `state=open`,
+`merged=false`, base commit beklenen `edd368b...` idi. Merge yapılmadı.
+Bu teslim kayıt eklemesi ayrı dokümantasyon commit'idir; test girdileri değişmez.
