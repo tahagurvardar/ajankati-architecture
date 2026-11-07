@@ -134,6 +134,7 @@ app.on("browser-window-created", (_event, window) => {
       for (const [width, height, zoom] of [
         [1366, 768, 1],
         [1440, 900, 1],
+        [1600, 900, 1],
         [1920, 1080, 1],
         [1366, 768, 1.25],
         [820, 620, 1.25],
@@ -162,23 +163,66 @@ app.on("browser-window-created", (_event, window) => {
                 JSON.stringify({ width, height, zoom, route, layout }),
             );
           if (route === "overview") {
+            // Compact-layout evidence: where the scene starts, and hotspot focus feedback.
+            const geo = await window.webContents
+              .executeJavaScript(`(async () => {
+              window.scrollTo(0, 0);
+              const stage = document.querySelector('.scene-stage').getBoundingClientRect();
+              const spot = document.querySelector('.hotspot[data-agent="codex"]');
+              spot.focus();
+              await new Promise(resolve => setTimeout(resolve, 50));
+              const label = getComputedStyle(spot.querySelector('.hotspot-label')).display;
+              const spots = [...document.querySelectorAll('.hotspot')].map(el => {
+                const r = el.getBoundingClientRect();
+                return { agent: el.dataset.agent, cx: Math.round(r.left + r.width / 2 - stage.left), cy: Math.round(r.top + r.height / 2 - stage.top) };
+              });
+              const scroller = [...document.querySelectorAll('*')].filter(el => el !== document.documentElement && el !== document.body && el.scrollHeight > el.clientHeight + 1 && ['auto', 'scroll'].includes(getComputedStyle(el).overflowY)).map(el => el.className || el.tagName);
+              return { sceneTop: Math.round(stage.top), sceneHeight: Math.round(stage.height), viewport: window.innerHeight, pageHeight: document.documentElement.scrollHeight, label, spots, extraScrollers: scroller };
+            })()`);
+            console.log(
+              "SMOKE office " + JSON.stringify({ width, height, zoom, ...geo }),
+            );
+            if (geo.label !== "block")
+              throw new Error(
+                "Hotspot focus label not shown: " + JSON.stringify(geo),
+              );
+            if (zoom === 1) {
+              mkdirSync(drawerShots, { recursive: true });
+              writeFileSync(
+                resolve(
+                  drawerShots,
+                  `office-hotspot-focus-${width}x${height}.png`,
+                ),
+                (await window.webContents.capturePage()).toPNG(),
+              );
+            }
             // Real preload/worker inventory (read-only list); no process is launched.
             const drawer = await window.webContents
               .executeJavaScript(`(async () => {
+              window.scrollTo(0, 120);
+              await new Promise(resolve => setTimeout(resolve, 50));
+              const column = () => document.querySelector('.main-column').getBoundingClientRect();
+              const before = { y: window.scrollY, left: column().left, width: column().width };
               const hotspot = document.querySelector('.hotspot[data-agent="claude"]');
-              hotspot.focus();
+              hotspot.focus({ preventScroll: true });
               hotspot.click();
               await new Promise(resolve => setTimeout(resolve, 350));
               const dialog = document.querySelector('[role="dialog"]');
               const rect = dialog?.getBoundingClientRect();
+              const body = document.querySelector('.drawer-main');
               const result = {
                 open: Boolean(dialog),
                 modal: dialog?.getAttribute('aria-modal') === 'true',
                 focusOnClose: document.activeElement?.getAttribute('aria-label') === 'Ajan ayrıntılarını kapat',
-                fits: Boolean(rect) && rect.left >= -1 && rect.right <= window.innerWidth + 1,
+                fits: Boolean(rect) && rect.left >= -1 && rect.right <= window.innerWidth + 1 && rect.bottom <= window.innerHeight + 1,
                 pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
                 honest: dialog?.textContent.includes('Etkin değil') && !dialog.textContent.includes('Çalışıyor'),
+                locked: getComputedStyle(document.documentElement).overflow === 'hidden',
+                kept: window.scrollY === before.y && column().left === before.left && Math.abs(column().width - before.width) < 1,
+                bodyOverflowX: body.scrollWidth > body.clientWidth + 1,
+                scrollsInside: getComputedStyle(body).overflowY === 'auto' && getComputedStyle(body).overscrollBehaviorY === 'contain',
               };
+              window.__drawerBefore = before;
               return result;
             })()`);
             if (
@@ -187,6 +231,10 @@ app.on("browser-window-created", (_event, window) => {
               !drawer.focusOnClose ||
               !drawer.fits ||
               drawer.pageOverflow ||
+              !drawer.locked ||
+              !drawer.kept ||
+              drawer.bodyOverflowX ||
+              !drawer.scrollsInside ||
               !drawer.honest
             )
               throw new Error(
@@ -205,9 +253,15 @@ app.on("browser-window-created", (_event, window) => {
               const hotspot = document.querySelector('.hotspot[data-agent="claude"]');
               document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
               await new Promise(resolve => setTimeout(resolve, 50));
-              return { closed: !document.querySelector('[role="dialog"]'), restored: document.activeElement === hotspot };
+              const before = window.__drawerBefore; const column = document.querySelector('.main-column').getBoundingClientRect();
+              return { closed: !document.querySelector('[role="dialog"]'), restored: document.activeElement === hotspot, unlocked: document.documentElement.style.overflow === '', position: window.scrollY === before.y && column.left === before.left && Math.abs(column.width - before.width) < 1 };
             })()`);
-            if (!closed.closed || !closed.restored)
+            if (
+              !closed.closed ||
+              !closed.restored ||
+              !closed.unlocked ||
+              !closed.position
+            )
               throw new Error(
                 "Drawer did not close with Escape/restore focus: " +
                   JSON.stringify({ width, height, zoom, closed }),
