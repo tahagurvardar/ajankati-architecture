@@ -19,6 +19,34 @@ export const capabilityStatus = {
   unsupported: "Bu aşamada desteklenmiyor",
 };
 
+export type CapabilityState = "verified" | "unknown" | "unsupported";
+/** Unknown keys or values are shown as unknown, never blank or as verified. */
+export function capabilityLabel(key: string): string {
+  return (
+    (capabilityLabels as Record<string, string | undefined>)[key] ??
+    `Bilinmeyen yetenek (${key})`
+  );
+}
+export function capabilityInfo(value: unknown): {
+  state: CapabilityState;
+  symbol: string;
+  text: string;
+} {
+  if (value === "verified")
+    return { state: "verified", symbol: "✓", text: "Doğrulandı" };
+  if (value === "unsupported")
+    return {
+      state: "unsupported",
+      symbol: "—",
+      text: capabilityStatus.unsupported,
+    };
+  return {
+    state: "unknown",
+    symbol: "?",
+    text: "Bilinmiyor · henüz doğrulanmadı",
+  };
+}
+
 export type OfficeRoleKey = "claude" | "codex" | "tester" | "research";
 export type OfficeRole = {
   key: OfficeRoleKey;

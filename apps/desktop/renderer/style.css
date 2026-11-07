@@ -709,3 +709,41 @@ footer {
   color: var(--secondary-text);
   font-size: 11px;
 }
+
+@media (max-height: 920px) {
+  .topbar {
+    min-height: 52px;
+    padding: 8px 30px;
+  }
+  main {
+    padding: 16px 30px 20px;
+  }
+  .page-heading {
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: 25px;
+    margin-bottom: 2px;
+  }
+  .page-heading p {
+    margin: 2px 0;
+  }
+  .sidebar {
+    padding-top: 20px;
+    gap: 12px;
+  }
+  .brand {
+    margin-bottom: 14px;
+  }
+  .nav-item {
+    padding: 10px 14px;
+    margin-bottom: 4px;
+  }
+  .demo {
+    padding: 6px 12px;
+    margin-bottom: 12px;
+  }
+  .demo p {
+    margin: 0;
+  }
+}

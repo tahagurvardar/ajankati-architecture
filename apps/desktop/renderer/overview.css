@@ -114,44 +114,78 @@
   height: auto;
   image-rendering: crisp-edges;
 }
-/* Hotspot anchors follow the approved prototype's percentages. */
+/* Hotspots are centred on the character each one maps to in the static scene.
+   Only these four are interactive; everything else in the image is decoration. */
 .hotspot {
   position: absolute;
   display: grid;
   place-items: center;
-  width: clamp(26px, 3vw, 42px);
-  height: clamp(26px, 3vw, 42px);
+  width: clamp(26px, 2.5vw, 38px);
+  height: clamp(26px, 2.5vw, 38px);
   min-height: 0;
   padding: 0;
-  border: 2px solid rgba(237, 255, 254, 0.87);
-  border-radius: 50%;
-  background: rgba(0, 140, 145, 0.6);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.53);
-  font-size: clamp(11px, 1.3vw, 17px);
-  transition:
-    transform 0.15s,
-    background 0.15s;
+  translate: -50% -50%;
+  border: 3px solid #fff;
+  border-radius: 3px;
+  background: #0f777b;
+  box-shadow:
+    0 0 0 2px #10343e,
+    3px 3px 0 2px rgba(16, 52, 62, 0.55);
+  font-size: clamp(11px, 1.2vw, 17px);
 }
-.hotspot:hover:not(:disabled) {
-  transform: scale(1.2);
-  background: #006c70;
+.hotspot:hover:not(:disabled),
+.hotspot:focus-visible {
+  scale: 1.12;
+  background: #0a5b5f;
   filter: none;
+  z-index: 3;
+}
+.hotspot:focus-visible {
+  outline: 3px solid #ffc985;
+  outline-offset: 3px;
+}
+.hotspot-label {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  translate: -50% 0;
+  display: none;
+  min-width: max-content;
+  padding: 6px 10px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: #10343e;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+.hotspot-label small {
+  display: block;
+  color: #cfe3e5;
+  font-size: 11px;
+  font-weight: 400;
+}
+.hotspot:hover .hotspot-label,
+.hotspot:focus-visible .hotspot-label {
+  display: block;
 }
 .hotspot[data-agent="claude"] {
-  left: 22%;
-  top: 46%;
+  left: 16.5%;
+  top: 51%;
 }
 .hotspot[data-agent="codex"] {
-  left: 46%;
-  top: 56%;
+  left: 46.7%;
+  top: 53%;
 }
 .hotspot[data-agent="research"] {
-  left: 58%;
-  top: 36%;
+  left: 55.5%;
+  top: 30.5%;
 }
 .hotspot[data-agent="tester"] {
-  left: 79%;
-  top: 76%;
+  left: 64.3%;
+  top: 76.5%;
 }
 .view-controls {
   position: relative;
@@ -319,7 +353,8 @@
   }
 }
 
-/* Agent detail dialog: the approved HTML drawer, built as a real modal. */
+/* Agent detail dialog: the approved HTML drawer, built as a real modal.
+   The header stays put; only .drawer-main scrolls, and it never chains to the page. */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -333,13 +368,20 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  width: min(420px, 100vw);
+  width: clamp(360px, 32vw, 480px);
+  max-width: 100vw;
   height: 100vh;
-  overflow-y: auto;
+  height: 100dvh;
   background: white;
   border-left: 1px solid var(--stroke);
   box-shadow: -15px 0 50px rgba(16, 42, 56, 0.35);
+  overscroll-behavior: contain;
   animation: drawer-in 0.23s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-drawer {
+    animation: none;
+  }
 }
 @keyframes drawer-in {
   from {
@@ -347,10 +389,11 @@
   }
 }
 .drawer-top {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 22px;
+  padding: 14px 22px;
   border-bottom: 1px solid var(--stroke);
 }
 .drawer-top h2 {
@@ -364,13 +407,18 @@
   line-height: 1;
 }
 .drawer-main {
-  padding: 20px 22px 28px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 22px 28px;
 }
 .drawer-main h3 {
-  margin: 24px 0 8px;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: #536f80;
+  margin: 22px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #d7e6ea;
+  font-size: 14px;
+  color: #0c5c61;
 }
 .agent-ident {
   display: flex;
@@ -383,85 +431,219 @@
 .agent-ident small {
   display: block;
   color: var(--secondary-text);
-  font-size: 12px;
+  font-size: 13px;
 }
 .avatar {
   display: grid;
   place-items: center;
   flex: none;
-  width: 58px;
-  height: 58px;
+  width: 52px;
+  height: 52px;
   border-radius: 11px;
   background: #e7f2f5;
   color: var(--accent);
-  font-size: 28px;
+  font-size: 26px;
 }
 .drawer-status {
-  margin: 16px 0 8px;
-  padding: 11px 13px;
+  margin: 14px 0 8px;
+  padding: 10px 13px;
   border-radius: 9px;
   background: #edf4f6;
   color: #355365;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 .drawer-status.ok {
   background: #e4f6ee;
-  color: #178263;
+  color: #136a52;
 }
 .drawer-status.warn {
   background: #fff2db;
   color: #78521a;
 }
+.drawer-main p,
 .drawer-note {
-  font-size: 12px;
+  font-size: 13px;
 }
 .drawer-facts {
+  display: grid;
+  grid-template-columns: minmax(110px, 40%) minmax(0, 1fr);
   margin: 0;
 }
+.drawer-facts dt,
+.drawer-facts dd {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--stroke);
+}
 .drawer-facts dt {
-  float: left;
-  clear: left;
-  width: 46%;
-  padding: 9px 0;
-  font-size: 12px;
+  padding-right: 10px;
+  font-size: 13px;
   color: var(--secondary-text);
 }
 .drawer-facts dd {
   margin: 0;
-  padding: 9px 0 9px 46%;
-  border-bottom: 1px solid var(--stroke);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.drawer-facts .fact-row {
+.exec-path {
+  display: grid;
+  gap: 8px;
+}
+.path-short {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f1f5f7;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.path-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.path-actions button {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.path-full {
+  width: 100%;
+  resize: none;
+  padding: 8px 10px;
+  border: 1px solid #bdcdd7;
+  border-radius: 6px;
+  background: #fff;
+  color: #132c38;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.path-status {
+  margin: 0;
+  min-height: 1.5em;
+  font-size: 13px;
+  color: #136a52;
+}
+.path-offscreen {
+  position: fixed;
+  top: 0;
+  left: -9999px;
+}
+.disclosure {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: 100%;
+  background: #f1f5f7;
+  border-color: #cbd9e1;
+  color: #244e60;
+  text-align: left;
+}
+.disclosure small {
+  flex-basis: 100%;
+  color: #3f5b6c;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cap-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cap-list li {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--stroke);
+  font-size: 13px;
 }
-.drawer-facts .fact-row dt,
-.drawer-facts .fact-row dd {
-  float: none;
-  width: auto;
-  padding: 9px 0;
-  border: 0;
-}
-.drawer-facts .fact-row dd {
+.cap-list b {
+  flex: none;
+  max-width: 55%;
   text-align: right;
+  font-size: 13px;
+}
+.cap-verified b {
+  color: #136a52;
+}
+.cap-unknown b {
+  color: #78521a;
+}
+.cap-unsupported b {
+  color: #516a7b;
 }
 .drawer-actions {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .drawer-actions button {
   width: 100%;
   white-space: normal;
 }
-.agent-drawer .agent-path {
-  margin: 12px 0 0;
-  font-family: monospace;
-  font-size: 11px;
-  overflow-wrap: anywhere;
+.unavailable {
+  padding: 12px;
+  border: 1px dashed #aebfc9;
+  border-radius: 8px;
+  background: #f6f8fa;
+}
+.unavailable button:disabled {
+  opacity: 1;
+  background: #e6ecf0;
+  border-color: #c3d0d8;
+  color: #4a6272;
+  cursor: not-allowed;
+}
+.unavailable p {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+/* Compact Windows laptops: trim vertical whitespace so the office scene starts
+   higher; type sizes stay readable and no extra scrollers are introduced. */
+@media (max-height: 920px) {
+  .metrics {
+    gap: 12px;
+    margin: 12px 0 14px;
+  }
+  .metrics article {
+    padding: 12px 14px;
+    gap: 12px;
+  }
+  .metric-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+  }
+  .metrics strong {
+    font-size: 24px;
+    margin-bottom: 2px;
+  }
+  .metrics .metric-text {
+    font-size: 16px;
+  }
+  .overview-bar {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+  }
+  .view-controls {
+    padding: 8px;
+  }
+  .view-controls button {
+    min-height: 36px;
+    padding-block: 6px;
+  }
+  .overview-lower {
+    margin-top: 14px;
+    gap: 14px;
+  }
+  .info-card {
+    padding: 16px;
+  }
 }
