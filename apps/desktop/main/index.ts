@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, session, dialog } from "electron";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -9,10 +9,12 @@ import {
   sessionCommandSchema,
 } from "@ajankati/contracts";
 import { WorkerClient } from "./worker-client";
+import { HumanCliBridge } from "./human-cli-bridge";
 
 let window: BrowserWindow | undefined;
 let worker: WorkerClient | undefined;
 let quitting = false;
+let humanCli: HumanCliBridge | undefined;
 app.setName("AjanKati");
 app.setPath("userData", join(app.getPath("appData"), "AjanKati-Phase1A"));
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -67,7 +69,49 @@ else {
       session.defaultSession.setPermissionCheckHandler(() => false);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", (event) => event.preventDefault());
+      const ownerWindow = window;
+      humanCli = new HumanCliBridge(
+        (command) => worker!.humanCli(command),
+        async () => {
+          const result = await dialog.showOpenDialog(ownerWindow, {
+            title: "CLI hazırlığı için çalışma klasörü seçin",
+            properties: ["openDirectory", "dontAddToRecent"],
+          });
+          return result.canceled || result.filePaths.length !== 1
+            ? null
+            : result.filePaths[0]!;
+        },
+        async (prepared) => {
+          const result = await dialog.showMessageBox(ownerWindow, {
+            type: "question",
+            title: "Yalnız çevrimdışı CLI hazırlığı",
+            message:
+              "Bu hazırlığın tek kullanımlık onayını tüketmek istiyor musunuz? Gerçek CLI başlatılmaz.",
+            detail: JSON.stringify(
+              {
+                integrationId: prepared.integrationId,
+                executable: prepared.executable,
+                workspaceId: prepared.workspaceId,
+                workspacePath: prepared.workspacePath,
+                expiresAt: prepared.expiresAt,
+              },
+              null,
+              2,
+            ),
+            buttons: ["İptal", "Hazırlığı onayla"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          });
+          return result.response === 1;
+        },
+      );
       for (const [channel, method] of Object.entries({
+        "ajankati:human-cli-list": "list",
+        "ajankati:human-cli-select-workspace": "select-workspace",
+        "ajankati:human-cli-prepare": "prepare",
+        "ajankati:human-cli-approve": "approve",
+        "ajankati:human-cli-stop": "stop",
         "ajankati:sessions-list": "list",
         "ajankati:sessions-start": "start",
         "ajankati:sessions-interrupt": "interrupt",
@@ -91,6 +135,7 @@ else {
       })) {
         ipcMain.handle(channel, async (event, payload: unknown) => {
           if (
+            quitting ||
             !window ||
             event.sender !== window.webContents ||
             event.senderFrame !== window.webContents.mainFrame ||
@@ -98,6 +143,8 @@ else {
           )
             throw new Error("Yetkisiz pencere.");
           // Runtime schemas are validated again by client and worker; channel chooses authority.
+          if (channel.startsWith("ajankati:human-cli-"))
+            return humanCli!.execute({ method, payload });
           if (channel.startsWith("ajankati:sessions-"))
             return worker!.sessions(
               sessionCommandSchema.parse({ method, payload }),
@@ -139,6 +186,7 @@ else {
       app.quit();
     });
   app.on("before-quit", (event) => {
+    humanCli?.close();
     if (quitting || !worker) return;
     event.preventDefault();
     quitting = true;
