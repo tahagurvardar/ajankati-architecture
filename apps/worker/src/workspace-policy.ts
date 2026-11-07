@@ -1,6 +1,6 @@
 import { lstatSync } from "node:fs";
 import { homedir } from "node:os";
-import { win32 } from "node:path";
+import { join, win32 } from "node:path";
 
 /** Roots a workspace may never equal or contain. A workspace that contains the user
  * profile would put every provider credential/config directory under the CLI's cwd.
@@ -61,7 +61,7 @@ export function startupConfigSurface(
   const found: string[] = [];
   for (const name of STARTUP_CONFIG_SURFACE) {
     try {
-      stat(win32.join(workspacePath, name));
+      stat(join(workspacePath, name));
       found.push(name);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
