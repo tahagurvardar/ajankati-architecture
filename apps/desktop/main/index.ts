@@ -10,6 +10,7 @@ import {
 } from "@ajankati/contracts";
 import { WorkerClient } from "./worker-client";
 import { HumanCliBridge } from "./human-cli-bridge";
+import { isTrustedSender } from "./ipc-guard";
 
 let window: BrowserWindow | undefined;
 let worker: WorkerClient | undefined;
@@ -135,11 +136,11 @@ else {
       })) {
         ipcMain.handle(channel, async (event, payload: unknown) => {
           if (
-            quitting ||
-            !window ||
-            event.sender !== window.webContents ||
-            event.senderFrame !== window.webContents.mainFrame ||
-            event.senderFrame.url !== trustedUrl
+            !isTrustedSender(event, {
+              quitting,
+              webContents: window?.webContents,
+              trustedUrl,
+            })
           )
             throw new Error("Yetkisiz pencere.");
           // Runtime schemas are validated again by client and worker; channel chooses authority.

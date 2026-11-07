@@ -290,6 +290,17 @@ export class AgentRegistry {
       throw new Error("IDENTITY_CHANGED");
     return { discoveryId, executable: structuredClone(expected) };
   }
+  /** Version only if a probe observed it for the exact current executable image
+   * metadata; otherwise null. Read-only, never runs the executable. */
+  verifiedVersion(id: IntegrationId): string | null {
+    const row = this.rows.find((x) => x.integrationId === id);
+    const evidence = row?.compatibilityEvidence[0];
+    return row?.verified &&
+      row.detectedVersion &&
+      evidence?.fingerprint === row.executable?.fingerprint
+      ? row.detectedVersion
+      : null;
+  }
   async execute(input: unknown): Promise<AgentState> {
     const command = agentCommandSchema.parse(input);
     if (this.stopped) throw new Error("Keşif kapatıldı.");
