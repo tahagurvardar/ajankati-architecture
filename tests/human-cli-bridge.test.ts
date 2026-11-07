@@ -34,7 +34,12 @@ async function fixture(
       sourceFingerprint: "offline",
     },
   });
-  const host = new HumanCliHost(registry);
+  // The fixture executable does not exist; pin/scan are injected, never skipped in production.
+  const host = new HumanCliHost(registry, {
+    digest: async () => "a".repeat(64),
+    startupConfig: () => [],
+    protectedRoots: [],
+  });
   hosts.push(host);
   const send = vi.fn((command: unknown) => host.execute(command));
   const bridge = new HumanCliBridge(

@@ -15,7 +15,8 @@ import {
 import { TerminalHost } from "./terminal-host";
 import { AgentRegistry } from "./agent-registry";
 import { SessionHost } from "./session-host";
-import { HumanCliHost } from "./human-cli-host";
+import { HumanCliHost, diagnosticOf } from "./human-cli-host";
+import { runShutdown } from "./shutdown";
 
 async function main(): Promise<void> {
   const filename = process.argv[2];
@@ -39,14 +40,22 @@ async function main(): Promise<void> {
     const stop = async () => {
       if (stopping) return;
       stopping = true;
-      await humanCli.stop();
-      agents.stop();
-      await terminal.stop();
-      await service.stop();
-      store?.close();
-      closeSync(fd);
-      unlinkSync(lock);
-      process.exit(0);
+      // Every step runs even if an earlier one throws or hangs; the lock is always
+      // released so a failed cleanup cannot wedge the next start. Exiting also closes
+      // the job-owned process trees. A cleanup failure is reported by exit code only.
+      const { failed } = await runShutdown(
+        [
+          { name: "human-cli", run: () => humanCli.stop() },
+          { name: "agents", run: () => agents.stop() },
+          { name: "terminal", run: () => terminal.stop() },
+          { name: "service", run: () => service.stop() },
+          { name: "store", run: () => store?.close() },
+          { name: "lock-fd", run: () => closeSync(fd) },
+          { name: "lock-file", run: () => unlinkSync(lock) },
+        ],
+        3000,
+      );
+      process.exit(failed.length === 0 ? 0 : 1);
     };
     process.on("message", (message: unknown) => {
       if (stopping) return;
@@ -84,13 +93,15 @@ async function main(): Promise<void> {
             }
             if (!stopping && process.connected) process.send?.(response);
           })
-          .catch(() => {
+          .catch((error: unknown) => {
+            const code = diagnosticOf(error);
             if (!stopping && process.connected)
               process.send?.({
                 ...envelope,
                 ok: false,
                 error:
-                  "İnsan kontrollü CLI isteği reddedildi; gerçek başlatma kapalı.",
+                  "İnsan kontrollü CLI isteği reddedildi; gerçek başlatma kapalı." +
+                  (code ? ` [${code}]` : ""),
               });
           });
         return;

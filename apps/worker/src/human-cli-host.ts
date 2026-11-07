@@ -8,6 +8,43 @@ import {
   withNativePath,
   type NativePathIdentity,
 } from "./native-path-boundary";
+import { sha256File } from "./executable-digest";
+import {
+  defaultProtectedRoots,
+  startupConfigSurface,
+  workspaceScopeViolation,
+} from "./workspace-policy";
+import { evaluateLaunchReadiness } from "./launch-readiness";
+
+/** Closed set of reason codes that may cross to the renderer. Never free text. */
+export const HUMAN_CLI_ERROR_CODES = new Set([
+  "OWNER_STOPPED",
+  "BUSY",
+  "WORKSPACE_LIMIT",
+  "WORKSPACE_UNKNOWN",
+  "WORKSPACE_TOO_BROAD",
+  "IDENTITY_CHANGED",
+  "IDENTITY_UNAVAILABLE",
+  "PREPARATION_TIMEOUT",
+  "SESSION_OWNER",
+  "CONSENT_INVALID",
+  "CONSENT_EXPIRED",
+  "REAL_LAUNCH_DISABLED",
+]);
+/** Non-sensitive diagnostic: allow-listed code (+ blocker count) or nothing. */
+export function diagnosticOf(error: unknown): string | null {
+  if (!(error instanceof Error) || !HUMAN_CLI_ERROR_CODES.has(error.message))
+    return null;
+  const blockers = (error as Error & { blockers?: unknown }).blockers;
+  return typeof blockers === "number"
+    ? `${error.message}; blockers=${blockers}`
+    : error.message;
+}
+export type HumanCliHostOptions = {
+  digest?: (path: string, signal?: AbortSignal) => Promise<string>;
+  protectedRoots?: readonly string[];
+  startupConfig?: (workspacePath: string) => string[];
+};
 
 /** Preparation only. No launcher, provider input, task dispatch or enabling flag.
  * Workspace registrations come from the trusted owner, never renderer payloads.
@@ -21,7 +58,20 @@ export class HumanCliHost {
   private expiry?: ReturnType<typeof setTimeout>;
   private busy = false;
   private stopped = false;
-  constructor(private readonly agents: AgentRegistry) {}
+  private readonly abort = new AbortController();
+  private readonly digest: NonNullable<HumanCliHostOptions["digest"]>;
+  private readonly protectedRoots: readonly string[];
+  private readonly startupConfig: NonNullable<
+    HumanCliHostOptions["startupConfig"]
+  >;
+  constructor(
+    private readonly agents: AgentRegistry,
+    options: HumanCliHostOptions = {},
+  ) {
+    this.digest = options.digest ?? sha256File;
+    this.protectedRoots = options.protectedRoots ?? defaultProtectedRoots();
+    this.startupConfig = options.startupConfig ?? startupConfigSurface;
+  }
   async execute(input: unknown): Promise<HumanCliState> {
     const command = humanCliWorkerCommandSchema.parse(input);
     if (this.stopped) throw new Error("OWNER_STOPPED");
@@ -37,6 +87,8 @@ export class HumanCliHost {
           true,
           (value) => value,
         );
+        if (workspaceScopeViolation(identity.finalPath, this.protectedRoots))
+          throw new Error("WORKSPACE_TOO_BROAD");
         for (const [workspaceId, previous] of this.workspaces) {
           if (
             previous.finalPath.toLowerCase() ===
@@ -64,10 +116,14 @@ export class HumanCliHost {
         if (this.stopped) throw new Error("OWNER_STOPPED");
         if (performance.now() - started >= 10000)
           throw new Error("PREPARATION_TIMEOUT");
+        const pin = await this.pin(agent.executable);
+        if (this.stopped) throw new Error("OWNER_STOPPED");
+        if (performance.now() - started >= 10000)
+          throw new Error("PREPARATION_TIMEOUT");
         const workspace = this.workspace(command.payload.workspaceId);
         this.createdAt = Date.now();
         this.createdMono = performance.now();
-        this.identity = JSON.stringify({ agent, workspace });
+        this.identity = this.seal(agent, workspace, pin);
         this.session = {
           sessionId: randomUUID(),
           integrationId: command.payload.integrationId,
@@ -115,8 +171,9 @@ export class HumanCliHost {
       clearTimeout(this.expiry);
       try {
         const agent = await this.agents.terminalIdentity(session.integrationId);
+        const pin = await this.pin(agent.executable);
         const workspace = this.workspace(session.workspaceId);
-        if (JSON.stringify({ agent, workspace }) !== this.identity)
+        if (this.seal(agent, workspace, pin) !== this.identity)
           throw new Error("IDENTITY_CHANGED");
       } catch {
         throw new Error("IDENTITY_CHANGED");
@@ -127,10 +184,42 @@ export class HumanCliHost {
         throw new Error("CONSENT_EXPIRED");
       }
       // Even valid human consent is NOT proof of provider compatibility/safety.
-      throw new Error("REAL_LAUNCH_DISABLED");
+      const readiness = evaluateLaunchReadiness({
+        integrationId: session.integrationId,
+        verifiedVersion: this.agents.verifiedVersion(session.integrationId),
+        startupConfig: this.startupConfig(session.workspacePath),
+      });
+      throw Object.assign(new Error("REAL_LAUNCH_DISABLED"), {
+        blockers: readiness.blockers.length,
+      });
     } finally {
       this.busy = false;
     }
+  }
+  /** Content digests of the exact image (and its source shim) pin what metadata
+   * fingerprints alone cannot: an in-place rewrite that preserves size/timestamps. */
+  private async pin(executable: {
+    path: string;
+    sourceCanonicalPath: string;
+  }): Promise<string[]> {
+    const paths = [
+      ...new Set([executable.path, executable.sourceCanonicalPath]),
+    ];
+    return Promise.all(
+      paths.map((path) => this.digest(path, this.abort.signal)),
+    );
+  }
+  private seal(
+    agent: unknown,
+    workspace: NativePathIdentity,
+    pin: string[],
+  ): string {
+    return JSON.stringify({
+      agent,
+      workspace,
+      pin,
+      startupConfig: this.startupConfig(workspace.finalPath),
+    });
   }
   private workspace(id: string): NativePathIdentity {
     const expected = this.workspaces.get(id);
@@ -172,6 +261,7 @@ export class HumanCliHost {
   }
   async stop(): Promise<void> {
     this.stopped = true;
+    this.abort.abort();
     clearTimeout(this.expiry);
     this.workspaces.clear();
     if (this.session) {

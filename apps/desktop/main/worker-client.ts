@@ -42,11 +42,16 @@ export class WorkerClient {
   private pending = new Map<string, Pending>();
   private failed = false;
   readonly ready: Promise<void>;
+  private readonly closeGraceMs: number;
+  private readonly killWaitMs: number;
   constructor(
     workerPath: string,
     databasePath: string,
     electronRuntime = false,
+    options: { closeGraceMs?: number; killWaitMs?: number } = {},
   ) {
+    this.closeGraceMs = options.closeGraceMs ?? 8000;
+    this.killWaitMs = options.killWaitMs ?? 3000;
     const env: NodeJS.ProcessEnv = {};
     for (const key of ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "LANG"])
       if (process.env[key]) env[key] = process.env[key];
@@ -274,9 +279,22 @@ export class WorkerClient {
       this.child.once("exit", () => resolve());
     });
     if (this.child.connected) this.child.disconnect();
-    const timer = setTimeout(() => this.child.kill(), 8000);
-    await exited;
+    // Graceful disconnect first, then a forced kill; a child that still reports no
+    // exit must not hold application quit forever. The job-owned descendants die with
+    // the worker process, so the bounded wait never leaves an authority behind.
+    let killWait: ReturnType<typeof setTimeout> | undefined;
+    let settle!: () => void;
+    const gone = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    void exited.then(() => settle());
+    const timer = setTimeout(() => {
+      this.child.kill();
+      killWait = setTimeout(() => settle(), this.killWaitMs);
+    }, this.closeGraceMs);
+    await gone;
     clearTimeout(timer);
+    clearTimeout(killWait);
     this.failAll();
   }
 }
